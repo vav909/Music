@@ -395,8 +395,8 @@ function diagSummary(solo) {
     <li><span>Tempo</span><b>${Math.round(sc.bpm)}</b></li></ul>`;
 }
 /* Pictos : croche (lire la transcription) et portée avec une note sur la ligne de sol (réglages de la partition) */
-const ICON_EIGHTH = '<svg class="ic" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><ellipse cx="8" cy="18" rx="4.3" ry="3.2" transform="rotate(-20 8 18)" fill="currentColor"/><path d="M11.8 16.5V3.5l6.6 3.4c1.6 1.6 1.6 4.2-.4 6.6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>';
-const ICON_STAFF = '<svg class="ic" viewBox="0 0 34 26" width="34" height="26" aria-hidden="true"><g stroke="currentColor" stroke-width="1.3"><line x1="2" y1="5" x2="32" y2="5"/><line x1="2" y1="9" x2="32" y2="9"/><line x1="2" y1="13" x2="32" y2="13"/><line x1="2" y1="17" x2="32" y2="17"/><line x1="2" y1="21" x2="32" y2="21"/></g><ellipse cx="17" cy="17" rx="3.9" ry="2.8" transform="rotate(-20 17 17)" fill="currentColor"/><line x1="20.6" y1="16.2" x2="20.6" y2="4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+const ICON_EIGHTH = '<svg class="ic" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="8" cy="18" rx="3.6" ry="2.7" transform="rotate(-20 8 18)"/><path d="M11.3 16.6V4l6.4 3.3c1.5 1.5 1.5 4-.4 6.2"/></svg>';
+const ICON_STAFF = '<svg class="ic" viewBox="0 0 34 26" width="34" height="26" aria-hidden="true"><g stroke="currentColor" stroke-width="1"><line x1="2" y1="5" x2="32" y2="5"/><line x1="2" y1="9" x2="32" y2="9"/><line x1="2" y1="13" x2="32" y2="13"/><line x1="2" y1="17" x2="32" y2="17"/><line x1="2" y1="21" x2="32" y2="21"/></g><ellipse cx="17" cy="17" rx="3.4" ry="2.4" transform="rotate(-20 17 17)" fill="currentColor"/><line x1="20.3" y1="16.3" x2="20.3" y2="4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>';
 const scoreBtn = (stop, label) => (stop ? IC.stop : ICON_EIGHTH) + '<span>' + label + '</span>';
 
 /* Page « Détails du solo » : une seule page, des sections repliables (SH.open mémorise celles qui sont dépliées) */
@@ -404,9 +404,9 @@ function sheetHTML(solo) {
   const sc = solo.score, title = esc(solo.name) + (solo.instrument ? ' · ' + esc(solo.instrument) : '');
   const sec = (id, label, body) => `<details class="sec" data-sec="${id}"${SH.open[id] ? ' open' : ''}><summary>${label}</summary><div class="sec-body">${body}</div></details>`;
   const edges = ['start', 'end'].map(w => `<div class="edrow"><span class="lbl">${w === 'start' ? 'Début' : 'Fin'}</span><b data-edge="${w}">${fmt(solo[w], true)}</b>
-    <button data-act="nudge" data-w="${w}" data-d="-1">−</button><button data-act="nudge" data-w="${w}" data-d="1">+</button>
-    <button class="here" data-act="here" data-w="${w}">⌖ ici</button></div>`).join('');
-  return `<div class="sheet-top"><button class="icon-btn" data-act="sheet-close" aria-label="Fermer">←</button><b>${title}</b></div>
+    <button data-act="nudge" data-w="${w}" data-d="-1" aria-label="Moins">${IC.minus}</button><button data-act="nudge" data-w="${w}" data-d="1" aria-label="Plus">${IC.plus}</button>
+    <button class="here" data-act="here" data-w="${w}">${IC.target} ici</button></div>`).join('');
+  return `<div class="sheet-top"><button class="icon-btn" data-act="sheet-close" aria-label="Fermer">${IC.back}</button><b>${title}</b></div>
     ${sec('range', 'Plage du solo', `<div class="tlbox">${timelineHTML()}${timelineTools()}</div>${edges}
       <div class="edrow2"><button data-act="step" data-step>Pas : ${S.step} s</button></div>
       <p class="hint">Touche la timeline pour te placer ; « ⌖ ici » prend la position de lecture comme début ou fin.</p>`)}
@@ -420,9 +420,9 @@ function sheetHTML(solo) {
       <p class="hint">Petit fichier sans audio (réglages, hauteurs détectées, notes) à m’envoyer pour comprendre les erreurs de la partition.</p>`)}
     <div class="dock">
       <div class="dock-panel" id="dockPanel"${SH.dock ? '' : ' hidden'}>
-        <div class="dock-head"><b>Réglages de la partition</b><button class="icon-btn" data-act="dock-toggle" aria-label="Replier les réglages">▾</button></div>
+        <div class="dock-head"><b>Réglages de la partition</b><button class="icon-btn" data-act="dock-toggle" aria-label="Replier les réglages">${IC.chev}</button></div>
         <div class="sheet-ctl">
-          <span class="lbl">Tempo</span><button data-act="bpm" data-d="-1">−</button><b id="bpmLbl">${sc ? Math.round(sc.bpm) : '…'}</b><button data-act="bpm" data-d="1">+</button>
+          <span class="lbl">Tempo</span><button data-act="bpm" data-d="-1" aria-label="Tempo moins 1">${IC.minus}</button><b id="bpmLbl">${sc ? Math.round(sc.bpm) : '…'}</b><button data-act="bpm" data-d="1" aria-label="Tempo plus 1">${IC.plus}</button>
           <button data-act="bpm-mul" data-f="0.5">÷2</button><button data-act="bpm-mul" data-f="2">×2</button>
         </div>
         <div class="sheet-ctl"><button data-act="tap">Taper le tempo</button><button data-act="swing">Rythme : ${sc && sc.swing ? 'swing' : 'droit'}</button>
@@ -485,7 +485,7 @@ function drawSheet() {
     bar.innerHTML = `<div class="nb-title">${name} · ${n.l} double-croche${n.l > 1 ? 's' : ''}</div><div class="nb-row">
       <button data-act="n-pitch" data-d="1">♯ +½</button><button data-act="n-pitch" data-d="-1">♭ −½</button><button data-act="n-pitch" data-d="12">8ve ↑</button><button data-act="n-pitch" data-d="-12">8ve ↓</button></div>
       <div class="nb-row"><button data-act="n-len" data-d="-1">Plus court</button><button data-act="n-len" data-d="1">Plus long</button><button data-act="n-move" data-d="-1">← Décaler</button><button data-act="n-move" data-d="1">Décaler →</button></div>
-      <div class="nb-row"><button data-act="n-dup">＋ Note après</button><button class="danger" data-act="n-del">Supprimer la note</button></div>`;
+      <div class="nb-row"><button data-act="n-dup">${IC.plus} Note après</button><button class="danger" data-act="n-del">Supprimer la note</button></div>`;
   } else bar.innerHTML = '';
 }
 /* ---------- Écoute de la partition écrite (sons de flûte synthétiques), seule ou avec le solo d'origine ---------- */

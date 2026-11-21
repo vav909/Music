@@ -38,20 +38,32 @@ const S = {
   onlyFav: false, instr: '', openId: null,   // openId : solo dont les options sont dépliées
 };
 S.full = (() => { try { return localStorage.getItem('sl-full') === '1'; } catch { return false; } })();   // lecteur complet ou allégé
-/* Icônes dessinées : les symboles ▶ ⏸ ⏹ sont remplacés par des emojis colorés (carré orange) sur Android */
-const svgI = (p, s = 24) => `<svg class="ic" viewBox="0 0 24 24" width="${s}" height="${s}" aria-hidden="true">${p}</svg>`;
+/* Icônes dessinées en trait fin (épaisseur commune). Les symboles ▶ ⏸ ⏹ ⬆ ⬇ en texte deviennent des emojis colorés sur Android. */
+const svgI = (p, s = 24) => `<svg class="ic" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 const IC = {
-  play: svgI('<path fill="currentColor" d="M8 5.6v12.8a1 1 0 0 0 1.5.86l10.4-6.4a1 1 0 0 0 0-1.72L9.5 4.74A1 1 0 0 0 8 5.6z"/>', 28),
-  pause: svgI('<rect x="6" y="5" width="4.4" height="14" rx="1.2" fill="currentColor"/><rect x="13.6" y="5" width="4.4" height="14" rx="1.2" fill="currentColor"/>', 28),
-  stop: svgI('<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>', 22),
-  chev: svgI('<path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>', 26),
+  play: svgI('<path d="M8.5 5.5v13l10.5-6.5z"/>', 28),
+  pause: svgI('<path d="M9 6v12M15 6v12"/>', 28),
+  stop: svgI('<rect x="7" y="7" width="10" height="10" rx="1.5"/>', 22),
+  chev: svgI('<path d="M6 9l6 6 6-6"/>', 24),
+  chevUp: svgI('<path d="M6 15l6-6 6 6"/>', 24),
+  pencil: svgI('<path d="M4.5 19.5l.8-3.6L16.2 5a2 2 0 0 1 2.8 2.8L8.1 18.7zM14.5 6.8l2.7 2.7"/>', 22),
+  loop: svgI('<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"/>', 26),
+  reset: svgI('<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4"/>', 18),
+  back: svgI('<path d="M19 12H5M11 6l-6 6 6 6"/>', 26),
+  close: svgI('<path d="M6 6l12 12M18 6L6 18"/>', 22),
+  plus: svgI('<path d="M12 5v14M5 12h14"/>', 20),
+  minus: svgI('<path d="M5 12h14"/>', 20),
+  target: svgI('<circle cx="12" cy="12" r="5.5"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>', 18),
+  up: svgI('<path d="M12 19V5M6 11l6-6 6 6"/>', 18),
+  down: svgI('<path d="M12 5v14M6 13l6 6 6-6"/>', 18),
+  star: on => svgI('<path d="M12 4.2l2.4 5 5.4.7-4 3.8 1 5.4L12 16.5l-4.8 2.6 1-5.4-4-3.8 5.4-.7z"' + (on ? ' fill="currentColor"' : '') + '/>', 24),
 };
 /* « + » ou « − » entouré de petits tirets, comme un chrono */
 function chronoIcon(sign) {
   let t = '';
   for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6, c = Math.cos(a), s = Math.sin(a); t += `<line x1="${(16 + s * 11.6).toFixed(1)}" y1="${(16 - c * 11.6).toFixed(1)}" x2="${(16 + s * 14.6).toFixed(1)}" y2="${(16 - c * 14.6).toFixed(1)}"/>`; }
   const mid = '<line x1="10.5" y1="16" x2="21.5" y2="16"/>' + (sign === '+' ? '<line x1="16" y1="10.5" x2="16" y2="21.5"/>' : '');
-  return `<svg class="ic" viewBox="0 0 32 32" width="36" height="36" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">${t}${mid}</g></svg>`;
+  return `<svg class="ic" viewBox="0 0 32 32" width="36" height="36" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">${t}${mid}</g></svg>`;
 }
 const audio = new Audio();
 audio.preload = 'auto';
@@ -113,7 +125,7 @@ async function importFiles(files) {
   }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   render();
-  toast('Morceau ajouté ✔');
+  toast('Morceau ajouté');
 }
 
 /* ---------- Navigation / rendu ---------- */
@@ -138,7 +150,7 @@ function render() {
 
 function songChips(song, onlyFav) {
   return song.solos.filter(s => !onlyFav || s.fav).map(s =>
-    `<button class="chip" data-act="open-solo" data-song="${song.id}" data-solo="${s.id}"><i></i>${esc(s.name)}${s.fav ? ' ★' : ''}</button>`).join('');
+    `<button class="chip" data-act="open-solo" data-song="${song.id}" data-solo="${s.id}"><i></i>${esc(s.name)}${s.fav ? ' ' + IC.star(true) : ''}</button>`).join('');
 }
 
 function renderLibrary() {
@@ -149,12 +161,12 @@ function renderLibrary() {
   }
   if (S.tab === 'songs') {
     const songs = [...S.songs].sort((a, b) => a.title.localeCompare(b.title, 'fr'));
-    c.innerHTML = `<div class="filters"><button class="chip ${S.onlyFav ? 'on' : ''}" data-act="fav-filter">★ Favoris</button></div>` +
+    c.innerHTML = `<div class="filters"><button class="chip ${S.onlyFav ? 'on' : ''}" data-act="fav-filter">${IC.star(S.onlyFav)} Favoris</button></div>` +
       songs.filter(sg => !S.onlyFav || sg.solos.some(s => s.fav)).map(sg => `
       <div class="song">
         <div class="song-head">
           ${sg.cover ? `<img class="thumb" src="${esc(sg.cover)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<button class="song-open" data-act="open-song" data-song="${sg.id}"><b>${esc(sg.title)}</b><small>${sg.artist ? esc(sg.artist) + ' · ' : ''}${fmt(sg.duration)} · ${sg.solos.length} solo${sg.solos.length > 1 ? 's' : ''}</small></button>
-          <button class="icon-btn" data-act="del-song" data-song="${sg.id}" aria-label="Supprimer">✕</button>
+          <button class="icon-btn" data-act="del-song" data-song="${sg.id}" aria-label="Supprimer">${IC.close}</button>
         </div>
         ${sg.solos.length ? `<div class="chips">${songChips(sg, S.onlyFav)}</div>` : ''}
       </div>`).join('');
@@ -162,11 +174,11 @@ function renderLibrary() {
     const all = S.songs.flatMap(sg => sg.solos.map(s => ({ sg, s })));
     const instrs = [...new Set(all.map(x => x.s.instrument).filter(Boolean))].sort();
     const list = all.filter(({ s }) => (!S.onlyFav || s.fav) && (!S.instr || s.instrument === S.instr));
-    c.innerHTML = `<div class="io"><button data-act="export">⬆ Partager mes solos</button><button data-act="import">⬇ Importer des solos</button></div><div class="filters"><button class="chip ${S.onlyFav ? 'on' : ''}" data-act="fav-filter">★ Favoris</button>` +
+    c.innerHTML = `<div class="io"><button data-act="export">${IC.up} Partager mes solos</button><button data-act="import">${IC.down} Importer des solos</button></div><div class="filters"><button class="chip ${S.onlyFav ? 'on' : ''}" data-act="fav-filter">★ Favoris</button>` +
       instrs.map(i => `<button class="chip ${S.instr === i ? 'on' : ''}" data-act="instr-filter" data-instr="${esc(i)}">${esc(i)}</button>`).join('') + `</div>` +
       (list.length ? `<div class="panel">` + list.map(({ sg, s }) => `
         <div class="solo"><button class="pick" data-act="open-solo" data-song="${sg.id}" data-solo="${s.id}"><i class="dot"></i><span><b>${esc(s.name)}${s.instrument ? ' · ' + esc(s.instrument) : ''}</b><small>${s.soloist ? esc(s.soloist) + ' · ' : ''}${esc(sg.title)} · ${fmt(s.start)}–${fmt(s.end)}</small></span></button>
-        <button class="star ${s.fav ? 'on' : ''}" data-act="star-lib" data-song="${sg.id}" data-solo="${s.id}">${s.fav ? '★' : '☆'}</button></div>`).join('') + `</div>`
+        <button class="star ${s.fav ? 'on' : ''}" data-act="star-lib" data-song="${sg.id}" data-solo="${s.id}" aria-label="Favori">${IC.star(s.fav)}</button></div>`).join('') + `</div>`
         : `<div class="empty"><p>Aucun solo ici.<br>Ouvre un morceau et crée tes solos avec « Nouveau solo ».</p></div>`);
   }
 }
@@ -178,22 +190,21 @@ function renderSong() {
   <section class="player${S.full ? ' full' : ''}">
     <div class="tlbox">${timelineHTML()}${timelineTools()}</div>
     <div class="ctl">
-      <button class="loop" id="loopBtn" data-act="loop" aria-label="Boucle">↻</button>
+      <button class="loop" id="loopBtn" data-act="loop" aria-label="Boucle">${IC.loop}</button>
       <button class="seekb" data-act="seek-hold" data-d="-1" aria-label="Reculer d’une seconde (appui long : 5 puis 10 secondes)">${chronoIcon('−')}</button>
       <button class="big" id="playBtn" data-act="play" aria-label="Lecture"></button>
       <button class="seekb" data-act="seek-hold" data-d="1" aria-label="Avancer d’une seconde (appui long : 5 puis 10 secondes)">${chronoIcon('+')}</button>
       <button class="expand" data-act="player-full" aria-expanded="${S.full}" aria-label="Tous les réglages de lecture">${IC.chev}</button>
     </div>
     <div class="tempo">
-      <button class="full-only" data-act="tempo" data-d="-5">−</button>
+      <button class="full-only" data-act="tempo" data-d="-5" aria-label="Tempo moins 5 pour cent">${IC.minus}</button>
       <input type="range" id="tempoRange" min="30" max="150" step="10" aria-label="Tempo, de dix en dix">
-      <button class="full-only" data-act="tempo" data-d="5">+</button>
+      <button class="full-only" data-act="tempo" data-d="5" aria-label="Tempo plus 5 pour cent">${IC.plus}</button>
       <b id="tempoLbl"></b>
     </div>
-    <div class="tempo-info"><button id="resetTempo" data-act="tempo-reset">↺ Tempo original</button></div>
+    <div class="tempo-info"><button id="resetTempo" data-act="tempo-reset">${IC.reset} Tempo original</button></div>
+    <div class="opts"><button id="gapBtn" data-act="gap"></button><button id="rampBtn" data-act="ramp"></button></div>
   </section>
-  <section class="panel" style="padding-bottom:0"><div class="opts">
-    <button id="gapBtn" data-act="gap"></button><button id="rampBtn" data-act="ramp"></button></div></section>
   <section class="panel" id="soloPanel"></section>`;
   mountTimeline($('.player .tlbox'));
   $('#tempoRange').addEventListener('input', e => setTempo(+e.target.value));
@@ -203,7 +214,7 @@ function renderSong() {
 /* La timeline existe à deux endroits (page du morceau, détails du solo) : chaque exemplaire se dessine et suit la lecture. */
 const TLS = [];
 const timelineHTML = () => '<div class="tl-scroll"><div class="tl-inner"><canvas></canvas><div class="playhead"></div></div></div>';
-const timelineTools = () => '<div class="tl-tools"><span class="tl-time"></span><button data-act="zoom" data-d="1" aria-label="Dézoomer">－</button><button data-act="zoom" data-d="-1" aria-label="Zoomer">＋</button></div>';
+const timelineTools = () => '<div class="tl-tools"><span class="tl-time"></span><button data-act="zoom" data-d="1" aria-label="Dézoomer">' + IC.minus + '</button><button data-act="zoom" data-d="-1" aria-label="Zoomer">' + IC.plus + '</button></div>';
 function mountTimeline(root) {
   if (!root) return null;
   const tl = { root, sc: root.querySelector('.tl-scroll'), inner: root.querySelector('.tl-inner'), cv: root.querySelector('canvas'), ph: root.querySelector('.playhead'), lbl: root.querySelector('.tl-time'), touching: false };
@@ -252,7 +263,7 @@ function drawOneTimeline(tl) {
   for (let t = 0; t < dur; t += stepS) g.fillText(fmt(t), t / per * SLOT + 3, H - 2);
 }
 
-const PENCIL = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zM20.7 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>';
+const PENCIL = IC.pencil;
 /* Options d'un solo (nom, instrument, soliste, plage) : dépliées sous la ligne du solo */
 function soloEditor(act) {
   return `<div class="editor">
@@ -260,8 +271,8 @@ function soloEditor(act) {
       <input class="txt" id="soloInstr" list="instrs" value="${esc(act.instrument)}" placeholder="Instrument (flûte, sax…)" aria-label="Instrument">
       <input class="txt" id="soloSoloist" value="${esc(act.soloist)}" placeholder="Soliste (ex. Miles Davis)" aria-label="Soliste">
       ${['start', 'end'].map(w => `<div class="edrow"><span class="lbl">${w === 'start' ? 'Début' : 'Fin'}</span><b data-edge="${w}">${fmt(act[w], true)}</b>
-        <button data-act="nudge" data-w="${w}" data-d="-1">−</button><button data-act="nudge" data-w="${w}" data-d="1">+</button>
-        <button class="here" data-act="here" data-w="${w}">⌖ ici</button></div>`).join('')}
+        <button data-act="nudge" data-w="${w}" data-d="-1" aria-label="Moins">${IC.minus}</button><button data-act="nudge" data-w="${w}" data-d="1" aria-label="Plus">${IC.plus}</button>
+        <button class="here" data-act="here" data-w="${w}">${IC.target} ici</button></div>`).join('')}
       <button class="cta2" data-act="sheet-open">Détails du solo<small>Partition · transcription · lecture · plage</small></button>
       <div class="edrow2"><button data-act="step" data-step>Pas : ${S.step} s</button><button class="danger" data-act="solo-del">Supprimer</button></div>
     </div>`;
@@ -270,17 +281,17 @@ function renderPanel() {
   const p = $('#soloPanel'); if (!p) return;
   const song = S.song;
   const list = song.solos.filter(s => !S.onlyFav || s.fav).sort((a, b) => a.start - b.start);
-  let h = `<button class="newsolo" data-act="solo-new">＋ Nouveau solo à partir d'ici</button>
-    <h2>Solos de ce morceau <button class="chip ${S.onlyFav ? 'on' : ''}" style="min-height:36px;float:right" data-act="fav-filter">★</button></h2>`;
+  let h = `<button class="newsolo" data-act="solo-new">${IC.plus} Nouveau solo à partir d'ici</button>
+    <h2>Solos de ce morceau <button class="chip ${S.onlyFav ? 'on' : ''}" style="min-height:36px;float:right" data-act="fav-filter" aria-label="Favoris seulement">${IC.star(S.onlyFav)}</button></h2>`;
   // une ligne : toucher = jouer la plage ; ▾ = options ; crayon (ligne repliée) = page des détails
   h += list.length ? list.map(s => { const open = S.openId === s.id;
     return `<div class="solo acc ${s.id === S.soloId ? 'sel' : ''}${open ? ' open' : ''}">
       <div class="solo-head">
         <button class="solo-play" data-act="solo-pick" data-solo="${s.id}" aria-label="Jouer ce solo">${IC.play}</button>
         <button class="pick" data-act="solo-toggle" data-solo="${s.id}" aria-expanded="${open}" aria-label="Champs du solo"><span><b>${esc(s.name)}${s.instrument ? ' · ' + esc(s.instrument) : ''}</b><small>${fmt(s.start)} – ${fmt(s.end)} · ${s.tempo}%${s.soloist ? ' · ' + esc(s.soloist) : ''}</small></span></button>
-        <button class="star ${s.fav ? 'on' : ''}" data-act="star" data-solo="${s.id}" aria-label="Favori">${s.fav ? '★' : '☆'}</button>
+        <button class="star ${s.fav ? 'on' : ''}" data-act="star" data-solo="${s.id}" aria-label="Favori">${IC.star(s.fav)}</button>
         ${open ? '' : `<button class="icon-sm" data-act="solo-details" data-solo="${s.id}" aria-label="Détails du solo">${PENCIL}</button>`}
-        <button class="icon-sm" data-act="solo-toggle" data-solo="${s.id}" aria-expanded="${open}" aria-label="${open ? 'Replier' : 'Déplier'} les options du solo">${open ? '▴' : '▾'}</button>
+        <button class="icon-sm" data-act="solo-toggle" data-solo="${s.id}" aria-expanded="${open}" aria-label="${open ? 'Replier' : 'Déplier'} les options du solo">${open ? IC.chevUp : IC.chev}</button>
       </div>
       ${open ? soloEditor(s) : ''}
     </div>`; }).join('') : `<p class="hint">${song.solos.length ? 'Aucun favori.' : 'Écoute le morceau, puis appuie sur « Nouveau solo » quand un solo commence.'}</p>`;
@@ -453,7 +464,7 @@ async function applyFileTags(song) {
 const CH = { hits: [], term: '', busy: false };
 function renderChooser(msg) {
   const el = $('#chooser'); el.hidden = false; document.body.style.overflow = 'hidden';
-  el.innerHTML = `<div class="sheet-top"><button class="icon-btn" data-act="ch-close" aria-label="Fermer">←</button><b>Choisir le bon morceau</b></div>
+  el.innerHTML = `<div class="sheet-top"><button class="icon-btn" data-act="ch-close" aria-label="Fermer">${IC.back}</button><b>Choisir le bon morceau</b></div>
     <div class="ch-search"><input class="txt" id="chTerm" value="${esc(CH.term)}" placeholder="Artiste et titre" aria-label="Recherche"><button data-act="ch-search">Chercher</button></div>
     <p class="hint">${esc(msg || 'Touche la bonne ligne : titre, artiste, album et pochette seront repris. Vérifie l’album et la durée. Tu peux corriger la recherche.')}</p>
     <div class="ch-list">${CH.hits.map((h, i) => `<button class="ch-hit" data-act="ch-pick" data-i="${i}">
@@ -463,7 +474,7 @@ function renderChooser(msg) {
 function closeChooser() { $('#chooser').hidden = true; if ($('#sheet').hidden && $('#edit').hidden) document.body.style.overflow = ''; }
 /* Modifier le morceau : titre, artiste (origine), album, pochette, identification automatique */
 function editHTML(song) {
-  return `<div class="sheet-top"><button class="icon-btn" data-act="edit-close" aria-label="Fermer">←</button><b>Modifier le morceau</b></div>
+  return `<div class="sheet-top"><button class="icon-btn" data-act="edit-close" aria-label="Fermer">${IC.back}</button><b>Modifier le morceau</b></div>
     <div class="edit-body">
       <div class="edit-cover">${song.cover ? `<img class="cover" src="${esc(song.cover)}" alt="Pochette" onerror="this.outerHTML='<div class=&quot;cover ph&quot;>♪</div>'">` : '<div class="cover ph">♪</div>'}
         <button data-act="cover-file">Changer la pochette…</button></div>
