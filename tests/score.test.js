@@ -50,6 +50,25 @@ const make = (spec, bpm = 120) => ({ bpm, total: Math.max(...spec.map(s => s[2])
     assert.ok(s.ok + s.oct >= s.truth * 0.9, JSON.stringify(s)); assert.ok(s.extra <= 6, JSON.stringify(s));
   });
 
+  console.log('Mélange de concert (nappe d\'orgue, batterie, salle, réverbération)');
+  await t('concert : ≥ 80 % des attaques et ≥ 60 % des hauteurs retrouvées (2 morceaux)', async () => {
+    let ok = 0, found = 0, truth = 0;
+    for (const seed of [5, 13]) {
+      const l = makeLine({ bpm: 100, bars: 6, lo: 70, hi: 87, seed }), s = score(await analyse(render({ line: l, accomp: true, gain: 1, live: 0.4 }), l.total, 'Flute'), l.notes);
+      ok += s.ok; found += s.ok + s.oct + s.wrong; truth += s.truth;
+    }
+    assert.ok(found >= truth * 0.8 && ok >= truth * 0.6, `justes ${ok}/${truth}, attaques ${found}/${truth}`);
+  });
+  await t('sauts de plus d\'une octave dans un solo : conservés, pas « corrigés »', async () => {
+    const seq = [72, 84, 74, 86, 72, 84, 76, 88], l = make(seq.map((m, i) => [m, 0.2 + i * 0.4, 0.2 + i * 0.4 + 0.33]));
+    const raw = await analyse(render({ line: l, accomp: false }), l.total, 'Flûte');
+    assert.strictEqual(raw.map(n => n.m).join(), seq.join());
+  });
+  await t('le diagnostic décrit les images sans hauteur', async () => {
+    const l = make([[79, 0.2, 1.0]]), r = await loadScore(FILE, render({ line: l, accomp: false }), 44100).analyzeSolo({ id: 'a' }, { start: 0, end: l.total, instrument: 'Flûte' }, () => {});
+    assert.ok(Array.isArray(r.diag.bands) && r.diag.bands.length === 5 && r.diag.track.length === r.diag.frames);
+  });
+
   if (fails) { console.log(`\n${fails} test(s) en échec`); process.exit(1); }
   console.log('\nTous les tests passent.');
 })();
