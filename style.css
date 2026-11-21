@@ -1,0 +1,98 @@
+:root {
+  --bg: #14161a;
+  --panel: #1d2026;
+  --panel2: #272b33;
+  --line: #343944;
+  --text: #f1f3f6;
+  --muted: #98a0ae;
+  --accent: #ffb703;
+  --accent-ink: #1a1300;
+  --danger: #ff6b6b;
+  --tap: 52px;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 16px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  display: flex; flex-direction: column; height: 100dvh;
+  overscroll-behavior: none; user-select: none; -webkit-user-select: none;
+}
+button { font: inherit; color: inherit; border: 0; background: var(--panel2); border-radius: 14px; min-height: var(--tap); min-width: var(--tap); padding: 0 14px; cursor: pointer; touch-action: manipulation; }
+button:active { filter: brightness(1.3); }
+input.txt { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 0 12px; min-height: 48px; width: 100%; user-select: text; -webkit-user-select: text; }
+[hidden] { display: none !important; }
+
+#topbar { display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top) + 6px) 10px 6px; min-height: 60px; background: var(--panel); border-bottom: 1px solid var(--line); }
+#topbar h1 { flex: 1; margin: 0; font-size: 19px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icon-btn { background: transparent; font-size: 26px; padding: 0; }
+#topAction { background: var(--accent); color: var(--accent-ink); border-radius: 50%; font-weight: 700; }
+
+#content { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 24px; }
+#tabs { display: flex; background: var(--panel); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+#tabs .tab { flex: 1; border-radius: 0; background: transparent; min-height: 58px; color: var(--muted); font-weight: 600; }
+#tabs .tab.on { color: var(--accent); }
+
+/* Bibliothèque */
+.empty { text-align: center; color: var(--muted); padding: 56px 28px; }
+.empty .big { font-size: 56px; }
+.empty button.cta { margin-top: 16px; background: var(--accent); color: var(--accent-ink); font-weight: 700; padding: 0 26px; }
+.song { margin: 10px 12px; background: var(--panel); border-radius: 16px; padding: 12px; }
+.song-head { display: flex; align-items: center; gap: 8px; }
+.song-open { flex: 1; text-align: left; background: transparent; padding: 0; min-height: 48px; display: block; overflow: hidden; }
+.song-open b { display: block; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.song-open small { color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.chip { min-height: 44px; border-radius: 22px; padding: 0 14px; display: inline-flex; align-items: center; gap: 8px; background: var(--panel2); }
+.chip i, .solo i.dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; }
+.filters { display: flex; gap: 8px; padding: 10px 12px 0; overflow-x: auto; }
+.filters .chip.on { background: var(--accent); color: var(--accent-ink); font-weight: 650; }
+.hint { color: var(--muted); font-size: 14px; padding: 4px 14px; }
+
+/* Morceau */
+.player { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 8px 10px 6px; border-bottom: 1px solid var(--line); }
+.tl-scroll { overflow-x: auto; overflow-y: hidden; background: var(--panel); border-radius: 14px; touch-action: pan-x; scrollbar-width: none; }
+.tl-scroll::-webkit-scrollbar { display: none; }
+.tl-inner { position: relative; height: 104px; }
+.tl-inner canvas { display: block; }
+.playhead { position: absolute; top: 0; bottom: 0; left: 0; width: 3px; margin-left: -1px; background: #fff; box-shadow: 0 0 6px #fff8; pointer-events: none; will-change: transform; }
+.tl-tools { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+.tl-tools #timeLbl { flex: 1; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tl-tools button { min-height: 40px; min-width: 48px; }
+.transport { display: flex; gap: 8px; align-items: center; }
+.transport button { flex: 1; min-height: 60px; font-weight: 650; }
+.transport .big { flex: 1.6; background: var(--accent); color: var(--accent-ink); font-size: 28px; }
+.transport .toggle { flex: 0 0 64px; font-size: 22px; opacity: .55; }
+.transport .toggle.on { opacity: 1; background: #2d5a3d; }
+.tempo { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.tempo input[type=range] { flex: 1; height: 48px; accent-color: var(--accent); }
+.tempo b { min-width: 52px; text-align: right; font-variant-numeric: tabular-nums; }
+.presets { display: flex; gap: 6px; margin-top: 2px; }
+.presets button { flex: 1; min-height: 40px; padding: 0; font-size: 14px; }
+.presets button.on { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+
+.panel { padding: 10px 12px; }
+.panel h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 4px 2px 8px; text-transform: uppercase; letter-spacing: .04em; }
+.newsolo { width: 100%; min-height: 56px; background: var(--panel2); border: 2px dashed var(--line); font-weight: 650; margin: 8px 0; }
+.solo { display: flex; align-items: center; gap: 4px; background: var(--panel); border-radius: 16px; margin-bottom: 8px; border: 2px solid transparent; }
+.solo.sel { border-color: var(--accent); }
+.solo .pick { flex: 1; display: flex; align-items: center; gap: 12px; text-align: left; background: transparent; min-height: 64px; overflow: hidden; }
+.solo .pick span { overflow: hidden; }
+.solo .pick b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.solo .pick small { color: var(--muted); font-variant-numeric: tabular-nums; }
+.solo .star { background: transparent; font-size: 26px; color: var(--muted); }
+.solo .star.on { color: var(--accent); }
+.solo .go { background: transparent; font-size: 20px; }
+
+.editor { background: var(--panel); border: 2px solid var(--accent); border-radius: 16px; padding: 12px; margin-bottom: 10px; display: grid; gap: 10px; }
+.edrow { display: flex; align-items: center; gap: 6px; }
+.edrow .lbl { width: 50px; color: var(--muted); font-size: 14px; }
+.edrow b { flex: 1; font-variant-numeric: tabular-nums; font-size: 18px; }
+.edrow button { min-width: 52px; padding: 0 8px; }
+.edrow .here { background: #2d5a3d; font-weight: 650; min-width: 76px; }
+.edrow2 { display: flex; gap: 8px; }
+.edrow2 button { flex: 1; }
+.danger { color: var(--danger); }
+
+#toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%) translateY(20px); background: #000d; color: #fff; padding: 12px 18px; border-radius: 22px; opacity: 0; transition: .25s; pointer-events: none; max-width: 86vw; text-align: center; z-index: 50; }
+#toast.show { opacity: 1; transform: translateX(-50%); }

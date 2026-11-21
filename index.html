@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14161a">
+  <title>Solo Looper</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="topbar">
+    <button id="backBtn" class="icon-btn" data-act="back" aria-label="Retour" hidden>←</button>
+    <h1 id="title">Solo Looper</h1>
+    <button id="topAction" class="icon-btn" data-act="add-song" aria-label="Ajouter un morceau">＋</button>
+  </header>
+
+  <main id="content"></main>
+
+  <nav id="tabs">
+    <button data-act="tab" data-tab="songs" class="tab on">🎵 Morceaux</button>
+    <button data-act="tab" data-tab="solos" class="tab">🎷 Solos</button>
+  </nav>
+
+  <input type="file" id="fileInput" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac" multiple hidden>
+  <datalist id="instrs">
+    <option value="Flûte"><option value="Saxophone"><option value="Trompette">
+    <option value="Trombone"><option value="Clarinette"><option value="Hautbois">
+    <option value="Basson"><option value="Cor"><option value="Piano">
+    <option value="Guitare"><option value="Violon"><option value="Voix">
+  </datalist>
+  <div id="toast" role="status"></div>
+  <script src="app.js"></script>
+</body>
+</html>
