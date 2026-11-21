@@ -8,6 +8,7 @@ App mobile (PWA, pensée pour Android) pour repérer, isoler et boucler des solo
 - Boucle sur le solo sélectionné, tempo 25–150 % **sans changer la hauteur** (`preservesPitch`), montée progressive, pause avec bips
 - Artiste, album, pochette et soliste (recherche automatique, saisie manuelle en secours)
 - Partage des repères de solos par fichier JSON (jamais l'audio)
+- Partition du solo (brouillon automatique, correction note par note, export MIDI / MusicXML)
 - Pédale Bluetooth : espace/↓ lecture, ↑ retour au début du solo
 - Thème clair, blanc et bleu, pensé mobile d'abord
 - Tempo mémorisé par solo ; onglets Morceaux / Solos, filtres favoris et instrument

@@ -112,3 +112,23 @@ input.txt { font: inherit; color: var(--text); background: var(--bg); border: 1p
 .io button { flex: 1; min-height: 44px; font-size: 14px; }
 .fatal { padding: 48px 24px; text-align: center; color: var(--muted); }
 .fatal button { margin-top: 16px; background: var(--accent); color: var(--accent-ink); font-weight: 700; padding: 0 24px; }
+
+.cta2 { width: 100%; min-height: 52px; background: var(--accent); color: var(--accent-ink); font-weight: 650; }
+#sheet { position: fixed; inset: 0; z-index: 60; background: #fff; display: flex; flex-direction: column; overflow-y: auto; padding-bottom: env(safe-area-inset-bottom); }
+#sheet[hidden] { display: none !important; }
+.sheet-top { display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top) + 6px) 10px 6px; min-height: 60px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+.sheet-top b { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-top #sheetPlay { background: var(--accent); color: var(--accent-ink); font-weight: 650; }
+.sheet-ctl { display: flex; align-items: center; gap: 6px; padding: 8px 10px; flex-wrap: wrap; }
+.sheet-ctl .lbl { color: var(--muted); font-size: 14px; }
+.sheet-ctl button { min-height: 44px; min-width: 44px; padding: 0 10px; }
+.sheet-ctl b { min-width: 40px; text-align: center; font-size: 18px; font-variant-numeric: tabular-nums; }
+#scoreWrap { padding: 0 6px; min-height: 120px; }
+#scoreWrap svg { display: block; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+#noteBar { position: sticky; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); padding: 8px 10px; }
+#noteBar:empty { display: none; }
+.nb-title { font-weight: 650; margin: 0 2px 6px; }
+.nb-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.nb-row button { flex: 1; min-height: 46px; padding: 0 4px; font-size: 14px; }
+.sheet-exp { display: flex; gap: 8px; padding: 8px 10px; }
+.sheet-exp button { flex: 1; min-height: 46px; }

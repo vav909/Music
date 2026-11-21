@@ -225,6 +225,7 @@ function renderPanel() {
       ${['start', 'end'].map(w => `<div class="edrow"><span class="lbl">${w === 'start' ? 'Début' : 'Fin'}</span><b>${fmt(act[w], true)}</b>
         <button data-act="nudge" data-w="${w}" data-d="-1">−</button><button data-act="nudge" data-w="${w}" data-d="1">+</button>
         <button class="here" data-act="here" data-w="${w}">⌖ ici</button></div>`).join('')}
+      <button class="cta2" data-act="sheet-open">Voir la partition de ce solo</button>
       <div class="edrow2"><button data-act="step">Pas : ${S.step} s</button><button class="danger" data-act="solo-del">Supprimer</button></div>
     </div>`;
   }
@@ -397,7 +398,7 @@ const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u030
 function exportSolos() {
   const songs = S.songs.filter(sg => sg.solos.length).map(sg => ({
     title: sg.title, artist: sg.artist || '', album: sg.album || '',
-    solos: sg.solos.map(({ name, instrument, soloist, start, end, tempo, fav }) => ({ name, instrument, soloist: soloist || '', start, end, tempo, fav })),
+    solos: sg.solos.map(({ name, instrument, soloist, start, end, tempo, fav, score }) => ({ name, instrument, soloist: soloist || '', start, end, tempo, fav, score })),
   }));
   if (!songs.length) { toast('Aucun solo à partager pour l\u2019instant'); return; }
   const blob = new Blob([JSON.stringify({ app: 'solo-looper', version: 1, songs }, null, 1)], { type: 'application/json' });
