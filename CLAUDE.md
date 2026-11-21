@@ -14,7 +14,6 @@ ralentir sans changer la hauteur. Fichiers statiques sans build : `index.html`, 
 - Style : fond blanc, gris clair, bâtonnets rectangulaires bleu clair pour le son, sélection en bleu plus soutenu,
   quelques touches de bleu pur. Sobre, mobile d'abord (boutons ≥ 44 px, commandes au pouce). Appliqué.
 - Priorité : tester d'abord avec un MP3 téléchargé.
-- Boutons : un design system sera fourni plus tard. En attendant, les boutons à picto (croche, portée, lecture du solo) n'ont pas de fond : seul le graphisme. Pas de nouvelle couleur d'accentuation.
 
 ## Déjà dans l'app
 Interface du morceau : en-tête avec pochette, titre, artiste · album et un crayon (modifier titre, artiste, album, pochette, identification) ; tempo au curseur de 10 en 10 (− / + de 5) avec « Tempo original » ; liste des solos : toucher une ligne = jouer la plage, ▾ = options (nom, instrument, soliste, début/fin), crayon (ligne repliée) = page « Détails du solo » : une seule page à sections repliables (plage avec timeline, partition avec boutons croche « Transcription » / « Avec le solo » au-dessus, diagnostic) et un bandeau fixe en bas : bouton central « ▶ Solo », picto portée (note sur la ligne de sol) qui déplie les réglages de la partition (tempo, rythme, ♯/♭, mesures, tessiture, voix aiguë, réanalyser).

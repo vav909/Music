@@ -215,12 +215,3 @@ details.sec[open] > summary::after { content: '▴'; }
 .dock-play { min-width: 170px; min-height: 56px; border-radius: 28px; background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 18px; }
 .sheet-ctl button .ic, .sheet-ctl button svg { flex: none; }
 .sheet-ctl button.wide { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
-
-/* Boutons à picto : sans fond, seul le graphisme (le style définitif viendra avec le design system) */
-button.ic-btn, .sheet-ctl button.ic-btn { background: transparent; border-radius: 0; box-shadow: none; display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 10px; color: var(--text); }
-button.ic-btn svg { color: var(--accent); }
-button.ic-btn:active { filter: none; opacity: .55; }
-.dock-btn, .dock-btn.on { background: transparent; border-radius: 0; }
-.dock-btn.on { color: var(--accent); }
-.dock-btn:active, .dock-play:active { filter: none; opacity: .55; }
-.dock-play { background: transparent; border-radius: 0; color: var(--accent); min-width: 0; padding: 0 18px; font-size: 22px; }
