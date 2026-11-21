@@ -35,11 +35,11 @@ function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(() => S.so
 const S = {
   songs: [], tab: 'songs', song: null, soloId: null,
   loop: true, tempo: 100, zoom: 1, step: 1, gap: 0, ramp: false, passes: 0, waiting: false,
-  onlyFav: false, instr: '',
+  onlyFav: false, instr: '', openId: null,   // openId : solo dont les options sont dépliées
 };
 const audio = new Audio();
 audio.preload = 'auto';
-let objectUrl = null, raf = 0, touching = false, wakeLock = null;
+let objectUrl = null, raf = 0, wakeLock = null;
 const spb = () => ZOOMS[S.zoom];
 const curSolo = () => S.song && S.song.solos.find(s => s.id === S.soloId);
 
@@ -160,8 +160,7 @@ function renderSong() {
   const c = $('#content');
   c.innerHTML = `
   <section class="player">
-    <div class="tl-scroll" id="tlScroll"><div class="tl-inner" id="tlInner"><canvas id="tl"></canvas><div class="playhead" id="playhead"></div></div></div>
-    <div class="tl-tools"><span id="timeLbl"></span><button data-act="zoom" data-d="1" aria-label="Dézoomer">－</button><button data-act="zoom" data-d="-1" aria-label="Zoomer">＋</button></div>
+    <div class="tlbox">${timelineHTML()}${timelineTools()}</div>
     <div class="transport">
       <button data-act="seek" data-d="-5">« 5 s</button>
       <button class="big" id="playBtn" data-act="play">▶</button>
@@ -178,23 +177,35 @@ function renderSong() {
   <section class="panel" style="padding-bottom:0"><div class="opts">
     <button id="gapBtn" data-act="gap"></button><button id="rampBtn" data-act="ramp"></button></div></section>
   <section class="panel" id="soloPanel"></section>`;
-  const sc = $('#tlScroll');
-  sc.addEventListener('touchstart', () => touching = true, { passive: true });
-  sc.addEventListener('touchend', () => setTimeout(() => touching = false, 1500), { passive: true });
-  $('#tlInner').addEventListener('click', e => {
-    const x = e.clientX - $('#tlInner').getBoundingClientRect().left;
-    audio.currentTime = Math.min(S.song.duration, Math.max(0, x / SLOT * spb()));
-    updatePlayhead();
-  });
+  mountTimeline($('.player .tlbox'));
   $('#tempoRange').addEventListener('input', e => setTempo(+e.target.value));
   drawTimeline(); renderPanel(); updateTransport(); updatePlayhead(true);
 }
 
-function drawTimeline() {
-  const cv = $('#tl'); if (!cv) return;
+/* La timeline existe à deux endroits (page du morceau, détails du solo) : chaque exemplaire se dessine et suit la lecture. */
+const TLS = [];
+const timelineHTML = () => '<div class="tl-scroll"><div class="tl-inner"><canvas></canvas><div class="playhead"></div></div></div>';
+const timelineTools = () => '<div class="tl-tools"><span class="tl-time"></span><button data-act="zoom" data-d="1" aria-label="Dézoomer">－</button><button data-act="zoom" data-d="-1" aria-label="Zoomer">＋</button></div>';
+function mountTimeline(root) {
+  if (!root) return null;
+  const tl = { root, sc: root.querySelector('.tl-scroll'), inner: root.querySelector('.tl-inner'), cv: root.querySelector('canvas'), ph: root.querySelector('.playhead'), lbl: root.querySelector('.tl-time'), touching: false };
+  tl.sc.addEventListener('touchstart', () => tl.touching = true, { passive: true });
+  tl.sc.addEventListener('touchend', () => setTimeout(() => tl.touching = false, 1500), { passive: true });
+  tl.inner.addEventListener('click', e => {
+    const x = e.clientX - tl.inner.getBoundingClientRect().left;
+    audio.currentTime = Math.min(S.song.duration, Math.max(0, x / SLOT * spb()));
+    updatePlayhead();
+  });
+  for (let i = TLS.length - 1; i >= 0; i--) if (!document.contains(TLS[i].root)) TLS.splice(i, 1);
+  TLS.push(tl); return tl;
+}
+const liveTimelines = () => { for (let i = TLS.length - 1; i >= 0; i--) if (!document.contains(TLS[i].root)) TLS.splice(i, 1); return TLS; };
+function drawTimeline() { if (S.song) for (const tl of liveTimelines()) drawOneTimeline(tl); }
+function drawOneTimeline(tl) {
+  const cv = tl.cv; if (!cv) return;
   const song = S.song, dur = song.duration, per = spb();
   const nBars = Math.ceil(dur / per), W = nBars * SLOT, H = 104, LBL = 16;
-  const inner = $('#tlInner'); inner.style.width = W + 'px';
+  const inner = tl.inner; inner.style.width = W + 'px';
   const dpr = Math.min(window.devicePixelRatio || 1, 16000 / W);
   cv.width = Math.ceil(W * dpr); cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
   const g = cv.getContext('2d'); g.scale(dpr, dpr);
@@ -223,35 +234,50 @@ function drawTimeline() {
   for (let t = 0; t < dur; t += stepS) g.fillText(fmt(t), t / per * SLOT + 3, H - 2);
 }
 
-function renderPanel() {
-  const p = $('#soloPanel'); if (!p) return;
-  const song = S.song, act = curSolo();
-  const list = song.solos.filter(s => !S.onlyFav || s.fav).sort((a, b) => a.start - b.start);
-  let h = '';
-  if (act) {
-    h += `<div class="editor">
+const PENCIL = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zM20.7 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>';
+/* Options d'un solo (nom, instrument, soliste, plage) : dépliées sous la ligne du solo */
+function soloEditor(act) {
+  return `<div class="editor">
       <input class="txt" id="soloName" value="${esc(act.name)}" placeholder="Nom du solo" aria-label="Nom du solo">
       <input class="txt" id="soloInstr" list="instrs" value="${esc(act.instrument)}" placeholder="Instrument (flûte, sax…)" aria-label="Instrument">
       <input class="txt" id="soloSoloist" value="${esc(act.soloist)}" placeholder="Soliste (ex. Miles Davis)" aria-label="Soliste">
-      ${['start', 'end'].map(w => `<div class="edrow"><span class="lbl">${w === 'start' ? 'Début' : 'Fin'}</span><b>${fmt(act[w], true)}</b>
+      ${['start', 'end'].map(w => `<div class="edrow"><span class="lbl">${w === 'start' ? 'Début' : 'Fin'}</span><b data-edge="${w}">${fmt(act[w], true)}</b>
         <button data-act="nudge" data-w="${w}" data-d="-1">−</button><button data-act="nudge" data-w="${w}" data-d="1">+</button>
         <button class="here" data-act="here" data-w="${w}">⌖ ici</button></div>`).join('')}
-      <button class="cta2" data-act="sheet-open">Détails du solo<small>Partition · lecture · diagnostic</small></button>
-      <div class="edrow2"><button data-act="step">Pas : ${S.step} s</button><button class="danger" data-act="solo-del">Supprimer</button></div>
+      <button class="cta2" data-act="sheet-open">Détails du solo<small>Partition · transcription · lecture · plage</small></button>
+      <div class="edrow2"><button data-act="step" data-step>Pas : ${S.step} s</button><button class="danger" data-act="solo-del">Supprimer</button></div>
     </div>`;
-  }
-  h += `<button class="newsolo" data-act="solo-new">＋ Nouveau solo à partir d'ici</button>
+}
+function renderPanel() {
+  const p = $('#soloPanel'); if (!p) return;
+  const song = S.song;
+  const list = song.solos.filter(s => !S.onlyFav || s.fav).sort((a, b) => a.start - b.start);
+  let h = `<button class="newsolo" data-act="solo-new">＋ Nouveau solo à partir d'ici</button>
     <h2>Solos de ce morceau <button class="chip ${S.onlyFav ? 'on' : ''}" style="min-height:36px;float:right" data-act="fav-filter">★</button></h2>`;
-  h += list.length ? list.map(s => `<div class="solo ${s.id === S.soloId ? 'sel' : ''}">
-      <button class="pick" data-act="solo-pick" data-solo="${s.id}"><i class="dot"></i><span><b>${esc(s.name)}${s.instrument ? ' · ' + esc(s.instrument) : ''}</b><small>${fmt(s.start)} – ${fmt(s.end)} · ${s.tempo}%${s.soloist ? ' · ' + esc(s.soloist) : ''}</small></span></button>
-      <button class="star ${s.fav ? 'on' : ''}" data-act="star" data-solo="${s.id}" aria-label="Favori">${s.fav ? '★' : '☆'}</button>
-    </div>`).join('') : `<p class="hint">${song.solos.length ? 'Aucun favori.' : 'Écoute le morceau, puis appuie sur « Nouveau solo » quand un solo commence.'}</p>`;
+  // une ligne : toucher = jouer la plage ; ▾ = options ; crayon (ligne repliée) = page des détails
+  h += list.length ? list.map(s => { const open = S.openId === s.id;
+    return `<div class="solo acc ${s.id === S.soloId ? 'sel' : ''}${open ? ' open' : ''}">
+      <div class="solo-head">
+        <button class="pick" data-act="solo-pick" data-solo="${s.id}" aria-label="Jouer ce solo"><i class="dot"></i><span><b>${esc(s.name)}${s.instrument ? ' · ' + esc(s.instrument) : ''}</b><small>${fmt(s.start)} – ${fmt(s.end)} · ${s.tempo}%${s.soloist ? ' · ' + esc(s.soloist) : ''}</small></span></button>
+        <button class="star ${s.fav ? 'on' : ''}" data-act="star" data-solo="${s.id}" aria-label="Favori">${s.fav ? '★' : '☆'}</button>
+        ${open ? '' : `<button class="icon-sm" data-act="solo-details" data-solo="${s.id}" aria-label="Détails du solo">${PENCIL}</button>`}
+        <button class="icon-sm" data-act="solo-toggle" data-solo="${s.id}" aria-expanded="${open}" aria-label="${open ? 'Replier' : 'Déplier'} les options du solo">${open ? '▴' : '▾'}</button>
+      </div>
+      ${open ? soloEditor(s) : ''}
+    </div>`; }).join('') : `<p class="hint">${song.solos.length ? 'Aucun favori.' : 'Écoute le morceau, puis appuie sur « Nouveau solo » quand un solo commence.'}</p>`;
   p.innerHTML = h;
-  const sl = $('#soloSoloist');
+  const act = S.openId && song.solos.find(x => x.id === S.openId);
+  if (!act) return;
+  const sl = $('#soloSoloist'), n = $('#soloName'), i = $('#soloInstr');
   if (sl) sl.addEventListener('input', () => { act.soloist = sl.value; saveSoon(); });
-  const n = $('#soloName'), i = $('#soloInstr');
-  if (n) n.addEventListener('input', () => { act.name = n.value; saveSoon(); const b = document.querySelector(`.solo.sel .pick b`); if (b) b.textContent = act.name + (act.instrument ? ' · ' + act.instrument : ''); });
+  if (n) n.addEventListener('input', () => { act.name = n.value; saveSoon(); const b = document.querySelector('.solo.open .pick b'); if (b) b.textContent = act.name + (act.instrument ? ' · ' + act.instrument : ''); });
   if (i) i.addEventListener('input', () => { act.instrument = i.value; saveSoon(); });
+}
+/* Début / fin / pas affichés dans les options et dans la page des détails */
+function syncEdges() {
+  const so = curSolo(); if (!so) return;
+  document.querySelectorAll('[data-edge]').forEach(b => { b.textContent = fmt(so[b.dataset.edge], true); });
+  document.querySelectorAll('[data-step]').forEach(b => { b.textContent = 'Pas : ' + S.step + ' s'; });
 }
 
 /* ---------- Lecture ---------- */
@@ -266,13 +292,15 @@ function updateTransport() {
   if (rb) { rb.textContent = 'Montée progressive : ' + (S.ramp ? 'oui' : 'non'); rb.classList.toggle('on', S.ramp); }
 }
 function updatePlayhead(forceScroll) {
-  const ph = $('#playhead'); if (!ph) return;
-  const x = audio.currentTime / spb() * SLOT;
-  ph.style.transform = `translateX(${x}px)`;
-  $('#timeLbl').textContent = `${fmt(audio.currentTime)} / ${fmt(S.song.duration)}`;
-  const sc = $('#tlScroll');
-  if (forceScroll || ((!audio.paused) && !touching)) {
-    if (forceScroll || x < sc.scrollLeft + 24 || x > sc.scrollLeft + sc.clientWidth - 60) sc.scrollLeft = Math.max(0, x - sc.clientWidth * 0.3);
+  if (!S.song) return;
+  const x = audio.currentTime / spb() * SLOT, label = `${fmt(audio.currentTime)} / ${fmt(S.song.duration)}`;
+  for (const tl of liveTimelines()) {
+    tl.ph.style.transform = `translateX(${x}px)`;
+    if (tl.lbl) tl.lbl.textContent = label;
+    const sc = tl.sc;
+    if (forceScroll || ((!audio.paused) && !tl.touching)) {
+      if (forceScroll || x < sc.scrollLeft + 24 || x > sc.scrollLeft + sc.clientWidth - 60) sc.scrollLeft = Math.max(0, x - sc.clientWidth * 0.3);
+    }
   }
 }
 let gapTimers = [], beepCtx = null;
@@ -339,7 +367,7 @@ async function openSong(id, soloId) {
   const song = S.songs.find(s => s.id === id); if (!song) return;
   const blob = await idb('audio', 'readonly', s => s.get(id));
   if (!blob) { toast('Fichier audio introuvable'); return; }
-  audio.pause(); cancelGap(); S.passes = 0;
+  audio.pause(); cancelGap(); S.passes = 0; S.openId = null;
   if (objectUrl) URL.revokeObjectURL(objectUrl);
   objectUrl = URL.createObjectURL(blob);
   audio.src = objectUrl;
@@ -350,12 +378,12 @@ async function openSong(id, soloId) {
 }
 function closeSong() {
   audio.pause(); cancelGap(); S.song && saveSongNow(S.song);
-  S.song = null; S.soloId = null; S.onlyFav = false;
+  S.song = null; S.soloId = null; S.openId = null; S.onlyFav = false;
   render();
 }
 function pickSolo(id, autoplay) {
   const s = S.song.solos.find(x => x.id === id); if (!s) return;
-  cancelGap(); S.passes = 0; S.soloId = id; S.tempo = s.tempo || 100; applyRate();
+  cancelGap(); S.passes = 0; S.soloId = id; if (S.openId !== id) S.openId = null; S.tempo = s.tempo || 100; applyRate();   // choisir un autre solo replie les options
   audio.currentTime = s.start;
   drawTimeline(); renderPanel(); updateTransport(); updatePlayhead(true);
   if (autoplay) audio.play().catch(() => {});
@@ -368,7 +396,7 @@ function newSolo() {
     start, end: Math.min(song.duration, start + 20), tempo: S.tempo, fav: false, color: COLORS[song.solos.length % COLORS.length],
   };
   song.solos.push(solo); saveSoon();
-  pickSolo(solo.id, false);
+  pickSolo(solo.id, false); S.openId = solo.id; renderPanel();   // les options se déplient pour régler la fin
   toast('Solo créé : place la fin avec « ⌖ ici »');
 }
 function editEdge(w, newT) {
@@ -379,7 +407,7 @@ function editEdge(w, newT) {
   s.start = Math.round(s.start * 10) / 10; s.end = Math.round(s.end * 10) / 10;
   saveSoon();
   audio.currentTime = w === 'start' ? s.start : Math.max(s.start, s.end - 2);  // on réécoute le bord modifié
-  drawTimeline(); renderPanel(); updatePlayhead(true);
+  drawTimeline(); renderPanel(); syncEdges(); updatePlayhead(true);
 }
 
 /* ---------- Artiste, album, pochette (recherche automatique, saisie manuelle en secours) ---------- */
@@ -561,11 +589,16 @@ document.addEventListener('click', async e => {
     case 'edit-close': closeEdit(); break;
     case 'zoom': S.zoom = Math.max(0, Math.min(ZOOMS.length - 1, S.zoom + +d.d)); drawTimeline(); updatePlayhead(true); break;
     case 'solo-pick':
-      if (S.soloId === d.solo) { play(); } else pickSolo(d.solo, true);
+      if (S.soloId === d.solo) {                       // déjà choisi : pause / reprise ; hors de la plage, on repart du début
+        if (audio.paused && s && (audio.currentTime < s.start || audio.currentTime >= s.end - 0.05)) audio.currentTime = s.start;
+        play();
+      } else pickSolo(d.solo, true);
       break;
     case 'solo-new': newSolo(); break;
+    case 'solo-toggle': if (S.openId === d.solo) { S.openId = null; renderPanel(); } else { pickSolo(d.solo, false); S.openId = d.solo; renderPanel(); } break;
+    case 'solo-details': pickSolo(d.solo, false); openSheet(); break;
     case 'solo-del':
-      if (s && confirm(`Supprimer « ${s.name} » ?`)) { S.song.solos = S.song.solos.filter(x => x !== s); S.soloId = null; saveSoon(); drawTimeline(); renderPanel(); }
+      if (s && confirm(`Supprimer « ${s.name} » ?`)) { S.song.solos = S.song.solos.filter(x => x !== s); S.soloId = null; S.openId = null; saveSoon(); drawTimeline(); renderPanel(); if (!$('#sheet').hidden) closeSheet(); }
       break;
     case 'here': if (s) editEdge(d.w, audio.currentTime); break;
     case 'nudge': if (s) editEdge(d.w, s[d.w] + +d.d * S.step); break;
@@ -579,7 +612,7 @@ document.addEventListener('click', async e => {
     case 'ch-pick': pickHit(+d.i); break;
     case 'export': exportSolos(); break;
     case 'import': $('#jsonInput').click(); break;
-    case 'step': S.step = STEPS[(STEPS.indexOf(S.step) + 1) % STEPS.length]; renderPanel(); break;
+    case 'step': S.step = STEPS[(STEPS.indexOf(S.step) + 1) % STEPS.length]; syncEdges(); break;
   }
 });
 $('#fileInput').addEventListener('change', e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) importFiles(f); });

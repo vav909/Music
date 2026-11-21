@@ -58,7 +58,7 @@ input.txt { font: inherit; color: var(--text); background: var(--bg); border: 1p
 .tl-inner canvas { display: block; }
 .playhead { position: absolute; top: 0; bottom: 0; left: 0; width: 3px; margin-left: -1px; background: var(--text); pointer-events: none; will-change: transform; }
 .tl-tools { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
-.tl-tools #timeLbl { flex: 1; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tl-tools .tl-time { flex: 1; color: var(--muted); font-variant-numeric: tabular-nums; }
 .tl-tools button { min-height: 40px; min-width: 48px; }
 .transport { display: flex; gap: 8px; align-items: center; }
 .transport button { flex: 1; min-height: 60px; font-weight: 650; }
@@ -179,9 +179,27 @@ input.txt { font: inherit; color: var(--text); background: var(--bg); border: 1p
 
 /* Détails du solo */
 .cta2 small { display: block; font-weight: 400; font-size: 13px; opacity: .9; }
-.sheet-tabs { display: flex; gap: 6px; padding: 8px 10px; }
-.sheet-tabs button { flex: 1; min-height: 44px; padding: 0 6px; }
-.sheet-tabs button.on { background: var(--accent); color: var(--accent-ink); font-weight: 650; }
 .diag-list { list-style: none; margin: 0; padding: 4px 14px; }
 .diag-list li { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .diag-list span { color: var(--muted); }
+
+/* Liste des solos : ligne dépliable (jouer · crayon · options) */
+.solo.acc { display: block; padding: 0; }
+.solo-head { display: flex; align-items: center; gap: 2px; }
+.solo.acc .pick { min-width: 0; }
+.icon-sm { background: transparent; min-width: 44px; padding: 0; font-size: 18px; color: var(--muted); display: grid; place-items: center; }
+.icon-sm svg { color: var(--accent); }
+.solo.acc .editor { margin: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0 0 14px 14px; background: transparent; }
+
+/* Page « Détails du solo » : sections repliables */
+details.sec { border-bottom: 1px solid var(--line); }
+details.sec > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; min-height: 52px; padding: 0 14px; font-weight: 650; }
+details.sec > summary::-webkit-details-marker { display: none; }
+details.sec > summary::after { content: '▾'; color: var(--muted); }
+details.sec[open] > summary::after { content: '▴'; }
+.sec-body { padding: 0 10px 12px; display: grid; gap: 8px; }
+.sec-body > .hint { padding: 0 4px; }
+.sec-body .tlbox { min-width: 0; }
+
+.solo.acc .pick { gap: 10px; padding: 0 6px 0 12px; }
+.solo.acc .star, .solo.acc .icon-sm { min-width: 40px; width: 40px; padding: 0; }

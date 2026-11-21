@@ -2,7 +2,7 @@
 /* Partition du solo sélectionné : analyse de la hauteur (YIN), quantification, affichage SVG,
    correction note par note, export MIDI / MusicXML. Aucune dépendance, fonctionne hors ligne. */
 
-const SH = { sel: null, busy: false, bars: 2, tab: 'score' };
+const SH = { sel: null, busy: false, bars: 2, open: { range: true, play: true, score: true, diag: false } };
 const ALLOWED = [16, 12, 8, 6, 4, 3, 2, 1];             // durées autorisées, en doubles-croches
 const SP = 9, LINE_H = 140, CLEF_W = 36, TS_W = 16;      // interligne, hauteur d'une ligne, largeurs fixes
 const INK = '#14171c', BLUE = '#1f6feb', MUTED = '#6b7686';
@@ -386,7 +386,7 @@ function playTone(m) {
 }
 const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
 
-/* Résumé de l'analyse pour l'onglet « Diagnostic » */
+/* Résumé de l'analyse pour la section « Diagnostic » */
 function diagSummary(solo) {
   const sc = solo.score, d = sc && sc.diag; if (!d) return '<p class="hint">Pas encore d’analyse.</p>';
   const r = soloRange(solo), pct = d.loud ? Math.round(100 * d.voiced / d.loud) : 0;
@@ -394,14 +394,21 @@ function diagSummary(solo) {
     <li><span>Tessiture</span><b>${noteFr(r.lo)} – ${noteFr(r.hi)}${r.manual ? ' (manuelle)' : ''}</b></li><li><span>Voix aiguë</span><b>${solo.top ? 'oui' : 'non'}</b></li>
     <li><span>Tempo</span><b>${Math.round(sc.bpm)}</b></li></ul>`;
 }
+/* Page « Détails du solo » : une seule page, des sections repliables (SH.open mémorise celles qui sont dépliées) */
 function sheetHTML(solo) {
-  const sc = solo.score, tab = SH.tab || 'score', pane = id => tab === id ? '' : ' hidden';
-  const title = esc(solo.name) + (solo.instrument ? ' · ' + esc(solo.instrument) : '');
+  const sc = solo.score, title = esc(solo.name) + (solo.instrument ? ' · ' + esc(solo.instrument) : '');
+  const sec = (id, label, body) => `<details class="sec" data-sec="${id}"${SH.open[id] ? ' open' : ''}><summary>${label}</summary><div class="sec-body">${body}</div></details>`;
+  const edges = ['start', 'end'].map(w => `<div class="edrow"><span class="lbl">${w === 'start' ? 'Début' : 'Fin'}</span><b data-edge="${w}">${fmt(solo[w], true)}</b>
+    <button data-act="nudge" data-w="${w}" data-d="-1">−</button><button data-act="nudge" data-w="${w}" data-d="1">+</button>
+    <button class="here" data-act="here" data-w="${w}">⌖ ici</button></div>`).join('');
   return `<div class="sheet-top"><button class="icon-btn" data-act="sheet-close" aria-label="Fermer">←</button><b>${title}</b>
       <button id="sheetPlay" data-act="sheet-play">▶ Solo</button></div>
-    <div class="sheet-tabs" role="tablist">${[['score', 'Partition'], ['play', 'Lecture'], ['diag', 'Diagnostic']].map(([k, l]) => `<button role="tab" data-act="sheet-tab" data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-    <div data-pane="score"${pane('score')}>
-    <div class="sheet-ctl">
+    ${sec('range', 'Plage du solo', `<div class="tlbox">${timelineHTML()}${timelineTools()}</div>${edges}
+      <div class="edrow2"><button data-act="step" data-step>Pas : ${S.step} s</button></div>
+      <p class="hint">Touche la timeline pour te placer ; « ⌖ ici » prend la position de lecture comme début ou fin.</p>`)}
+    ${sec('play', 'Écouter', `<div class="sheet-ctl"><button class="wide" data-act="score-play" id="spBtn">${PL.on && !PL.mix ? '⏹ Arrêter' : '▶ La transcription'}</button><button class="wide" data-act="score-play" data-mix="1" id="spMix">${PL.on && PL.mix ? '⏹ Arrêter' : '▶ Avec le solo'}</button></div>
+      <p class="hint">« ▶ Solo », en haut, joue le solo d’origine. « La transcription » joue la partition écrite ; « Avec le solo » la joue en même temps que l’enregistrement, pour vérifier à l’oreille.</p>`)}
+    ${sec('score', 'Partition', `<div class="sheet-ctl">
       <span class="lbl">Tempo</span><button data-act="bpm" data-d="-1">−</button><b id="bpmLbl">${sc ? Math.round(sc.bpm) : '…'}</b><button data-act="bpm" data-d="1">+</button>
       <button data-act="bpm-mul" data-f="0.5">÷2</button><button data-act="bpm-mul" data-f="2">×2</button>
       <button data-act="acc">${sc && sc.flats ? '♭' : '♯'}</button><button data-act="zoom-score" aria-label="Mesures par ligne">${SH.bars} mes.</button>
@@ -412,19 +419,26 @@ function sheetHTML(solo) {
     <div id="scoreWrap">${sc ? '' : '<p class="hint" id="scMsg">Analyse du solo…</p>'}</div>
     <div id="noteBar"></div>
     <div class="sheet-exp"><button data-act="reanalyze">Réanalyser</button><button data-act="exp-midi">MIDI</button><button data-act="exp-xml">MusicXML</button></div>
-    <p class="hint">Brouillon automatique : touche une note pour l’écouter et la corriger. Le tempo se règle à l’oreille (÷2 / ×2 si le rythme est doublé ou divisé).</p>
-    </div>
-    <div data-pane="play"${pane('play')}>
-      <p class="hint">« ▶ Solo », en haut, joue le solo d’origine (avec la boucle et le tempo du lecteur). Ici, tu écoutes la partition écrite.</p>
-      <div class="sheet-ctl"><button class="wide" data-act="score-play" id="spBtn">${PL.on && !PL.mix ? '⏹ Arrêter' : '▶ Écouter la partition'}</button><button class="wide" data-act="score-play" data-mix="1" id="spMix">${PL.on && PL.mix ? '⏹ Arrêter' : '▶ Avec le solo'}</button></div>
-      <p class="hint">« Avec le solo » joue la partition en même temps que l’enregistrement : tu vérifies à l’oreille ce qui est juste ou faux.</p>
-    </div>
-    <div data-pane="diag"${pane('diag')}>
-      ${diagSummary(solo)}
+    <p class="hint">Brouillon automatique : touche une note pour l’écouter et la corriger. Le tempo se règle à l’oreille (÷2 / ×2 si le rythme est doublé ou divisé).</p>`)}
+    ${sec('diag', 'Diagnostic', `${diagSummary(solo)}
       <div class="sheet-exp"><button data-act="diag">Envoyer un diagnostic</button></div>
-      <p class="hint">Le diagnostic est un petit fichier sans audio (réglages, hauteurs détectées, notes) à m’envoyer pour comprendre les erreurs de la partition.</p>
-    </div>`;
+      <p class="hint">Petit fichier sans audio (réglages, hauteurs détectées, notes) à m’envoyer pour comprendre les erreurs de la partition.</p>`)}`;
 }
+/* Affiche la page entière (sections, timeline, partition) */
+function redrawSheet() {
+  const solo = curSolo(), sh = $('#sheet'); if (!solo || !sh) return;
+  const top = sh.scrollTop;
+  sh.innerHTML = sheetHTML(solo);
+  mountTimeline(sh.querySelector('.tlbox')); drawTimeline(); updatePlayhead(true);
+  drawSheet(); updateSheetPlay(); sh.scrollTop = top;
+}
+// ouvrir / fermer une section : on s'en souvient, et la partition est redessinée à la bonne largeur
+document.addEventListener('toggle', e => {
+  const t = e.target; if (!t.dataset || !t.dataset.sec) return;
+  SH.open[t.dataset.sec] = t.open;
+  if (t.open && t.dataset.sec === 'score') drawSheet();
+  if (t.open && t.dataset.sec === 'range') { drawTimeline(); updatePlayhead(true); }
+}, true);
 function rangeControls(solo) {
   const r = soloRange(solo), opts = sel => { let o = ''; for (let m = 36; m <= 100; m++) o += `<option value="${m}"${m === sel ? ' selected' : ''}>${noteFr(m)}</option>`; return o; };
   return `<div class="sheet-ctl"><span class="lbl">Notes cherchées</span><select id="rgLo" aria-label="Note la plus grave du soliste">${opts(r.lo)}</select><span class="lbl">à</span><select id="rgHi" aria-label="Note la plus aiguë du soliste">${opts(r.hi)}</select>
@@ -520,12 +534,12 @@ async function runAnalysis() {
     requantize(solo.score); saveSoon();
   } catch (e) { console.error(e); toast('Analyse impossible pour ce fichier'); }
   SH.busy = false;
-  if (!$('#sheet').hidden) { $('#sheet').innerHTML = sheetHTML(solo); drawSheet(); updateSheetPlay(); }
+  if (!$('#sheet').hidden) redrawSheet();
 }
 function openSheet() {
   const solo = curSolo(); if (!solo) return;
-  stopScore(); SH.sel = null; SH.tab = 'score'; const sh = $('#sheet'); sh.hidden = false; document.body.style.overflow = 'hidden';
-  sh.innerHTML = sheetHTML(solo); updateSheetPlay();
+  stopScore(); SH.sel = null; const sh = $('#sheet'); sh.hidden = false; document.body.style.overflow = 'hidden';
+  redrawSheet(); sh.scrollTop = 0;
   if (solo.score && solo.score.diag) drawSheet(); else if (solo.score && solo.score.edited) drawSheet(); else runAnalysis();
 }
 function closeSheet() { stopScore(); $('#sheet').hidden = true; document.body.style.overflow = ''; audio.pause(); }
@@ -607,17 +621,16 @@ document.addEventListener('click', e => {
   const d = b.dataset, sc = sc$();
   switch (d.act) {
     case 'sheet-open': openSheet(); break;
-    case 'sheet-tab': SH.tab = d.tab; $('#sheet').innerHTML = sheetHTML(curSolo()); drawSheet(); updateSheetPlay(); $('#sheet').scrollTop = 0; break;
     case 'sheet-close': closeSheet(); break;
     case 'sheet-play': { stopScore(); const s = curSolo(); if (audio.paused) { if (s) audio.currentTime = s.start; audio.play().catch(() => {}); } else audio.pause(); break; }
     case 'note': SH.sel = +d.ni; if (sc) playTone(sc.notes[SH.sel].m); drawSheet(); break;
     case 'bpm': changeBpm(sc.bpm + +d.d); break;
     case 'tap': tapTempo(); break;
     case 'score-play': playScore(!!d.mix); break;
-    case 'swing': if (sc) { if (sc.edited && !confirm('Changer le rythme refait la partition et efface tes corrections. Continuer ?')) break; sc.swing = !sc.swing; requantize(sc); SH.sel = null; saveSoon(); $('#sheet').innerHTML = sheetHTML(curSolo()); drawSheet(); updateSheetPlay(); } break;
+    case 'swing': if (sc) { if (sc.edited && !confirm('Changer le rythme refait la partition et efface tes corrections. Continuer ?')) break; sc.swing = !sc.swing; requantize(sc); SH.sel = null; saveSoon(); redrawSheet(); } break;
     case 'bpm-mul': changeBpm(sc.bpm * +d.f); break;
-    case 'acc': if (sc) { sc.flats = !sc.flats; saveSoon(); $('#sheet').innerHTML = sheetHTML(curSolo()); drawSheet(); updateSheetPlay(); } break;
-    case 'zoom-score': SH.bars = SH.bars === 1 ? 2 : SH.bars === 2 ? 3 : 1; $('#sheet').innerHTML = sheetHTML(curSolo()); drawSheet(); updateSheetPlay(); break;
+    case 'acc': if (sc) { sc.flats = !sc.flats; saveSoon(); redrawSheet(); } break;
+    case 'zoom-score': SH.bars = SH.bars === 1 ? 2 : SH.bars === 2 ? 3 : 1; redrawSheet(); break;
     case 'rg-auto': if (sc && sc.edited && !confirm('Changer la tessiture refait la partition et efface tes corrections. Continuer ?')) break; { const so = curSolo(); if (so) { delete so.range; saveSoon(); runAnalysis(); } } break;
     case 'rg-top': if (sc && sc.edited && !confirm('Changer ce réglage refait la partition et efface tes corrections. Continuer ?')) break; { const so = curSolo(); if (so) { so.top = !so.top; saveSoon(); runAnalysis(); } } break;
     case 'reanalyze': if (!sc || !sc.edited || confirm('Réanalyser efface tes corrections. Continuer ?')) runAnalysis(); break;
@@ -643,8 +656,8 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => {
   const id = e.target.id; if (id !== 'rgLo' && id !== 'rgHi') return;
   const so = curSolo(), sc = so && so.score; if (!so) return;
-  if (sc && sc.edited && !confirm('Changer la tessiture refait la partition et efface tes corrections. Continuer ?')) { $('#sheet').innerHTML = sheetHTML(so); drawSheet(); updateSheetPlay(); return; }
+  if (sc && sc.edited && !confirm('Changer la tessiture refait la partition et efface tes corrections. Continuer ?')) { redrawSheet(); return; }
   let lo = +$('#rgLo').value, hi = +$('#rgHi').value;
-  if (hi < lo + 6) { toast('La plage doit couvrir au moins une quarte'); $('#sheet').innerHTML = sheetHTML(so); drawSheet(); updateSheetPlay(); return; }
+  if (hi < lo + 6) { toast('La plage doit couvrir au moins une quarte'); redrawSheet(); return; }
   so.range = { lo, hi }; saveSoon(); runAnalysis();
 });
