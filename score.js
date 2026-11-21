@@ -410,7 +410,7 @@ function sheetHTML(solo) {
     ${sec('range', 'Plage du solo', `<div class="tlbox">${timelineHTML()}${timelineTools()}</div>${edges}
       <div class="edrow2"><button data-act="step" data-step>Pas : ${S.step} s</button></div>
       <p class="hint">Touche la timeline pour te placer ; « ⌖ ici » prend la position de lecture comme début ou fin.</p>`)}
-    ${sec('score', 'Partition', `<div class="sheet-ctl"><button class="wide" data-act="score-play" id="spBtn">${scoreBtn(PL.on && !PL.mix, PL.on && !PL.mix ? 'Arrêter' : 'Transcription')}</button><button class="wide" data-act="score-play" data-mix="1" id="spMix">${scoreBtn(PL.on && PL.mix, PL.on && PL.mix ? 'Arrêter' : 'Avec le solo')}</button></div>
+    ${sec('score', 'Partition', `<div class="sheet-ctl"><button class="ic-btn" data-act="score-play" id="spBtn">${scoreBtn(PL.on && !PL.mix, PL.on && !PL.mix ? 'Arrêter' : 'Transcription')}</button><button class="ic-btn" data-act="score-play" data-mix="1" id="spMix">${scoreBtn(PL.on && PL.mix, PL.on && PL.mix ? 'Arrêter' : 'Avec le solo')}</button></div>
     <div id="scoreWrap">${sc ? '' : '<p class="hint" id="scMsg">Analyse du solo…</p>'}</div>
     <div id="noteBar"></div>
     <div class="sheet-exp"><button data-act="exp-midi">MIDI</button><button data-act="exp-xml">MusicXML</button></div>
