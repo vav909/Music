@@ -30,7 +30,7 @@ function makeLine({ bpm = 150, bars = 12, lo = 67, hi = 90, seed = 7, swing = tr
 }
 
 /* Mixe tout dans un tableau Float32 mono. */
-function render({ line, sr = 44100, accomp = true, gain = 1, seed = 3 }) {
+function render({ line, sr = 44100, accomp = true, gain = 1, seed = 3, live = false }) {
   const n = Math.ceil((line.total + 0.5) * sr), x = new Float32Array(n), r = rng(seed), beat = 60 / line.bpm;
   const add = (t0, t1, f, amp, harm, att, rel, vib) => {
     const i0 = Math.floor(t0 * sr), i1 = Math.min(n, Math.floor(t1 * sr));
@@ -57,6 +57,17 @@ function render({ line, sr = 44100, accomp = true, gain = 1, seed = 3 }) {
     for (let b = 0; b < bars * 4; b++) for (const off of [0, 2 / 3]) {                // cymbale ride
       const i0 = Math.floor((b + off) * beat * sr); for (let k = 0; k < 2200 && i0 + k < n; k++) x[i0 + k] += gain * (off ? 0.02 : 0.03) * (r() * 2 - 1) * Math.exp(-k / 700);
     }
+  }
+  if (live) {   // concert (live = niveau relatif de l'ambiance, 1 = très dense) : nappe d'orgue dans la tessiture de la flûte, bruit de salle, grosse caisse, caisse claire, réverbération
+    const bars = Math.ceil(line.total / (4 * beat)), chords = [[62, 65, 69, 72], [67, 71, 74, 77], [60, 64, 67, 71], [65, 69, 72, 76]];
+    for (let b = 0; b < bars; b++) for (const m of chords[b % 4]) add(b * 4 * beat, (b + 1) * 4 * beat, hz(m), 0.3 * live, [1, 0.6, 0.4, 0.25, 0.15], 0.2, 0.3, false);
+    for (let b = 0; b < bars * 4; b++) {
+      const i0 = Math.floor(b * beat * sr); if (b % 2 === 0) for (let k = 0; k < 9000 && i0 + k < n; k++) x[i0 + k] += 0.35 * live * Math.sin(2 * Math.PI * 58 * k / sr) * Math.exp(-k / 2500);
+      else for (let k = 0; k < 5000 && i0 + k < n; k++) x[i0 + k] += 0.22 * live * (r() * 2 - 1) * Math.exp(-k / 1200);
+    }
+    for (let i = 0; i < n; i++) x[i] += 0.05 * live * (r() * 2 - 1);
+    const dry = Float32Array.from(x);
+    for (const [dl, g] of [[0.08, 0.35], [0.15, 0.25], [0.23, 0.15], [0.31, 0.1]]) { const o = Math.floor(dl * sr); for (let i = o; i < n; i++) x[i] += g * live * dry[i - o]; }
   }
   let mx = 0; for (let i = 0; i < n; i++) mx = Math.max(mx, Math.abs(x[i]));
   for (let i = 0; i < n; i++) x[i] = x[i] / mx * 0.8;

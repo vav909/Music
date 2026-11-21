@@ -35,6 +35,31 @@ function rangeFor(instr) {
 const NOTE_FR = ['do', 'do♯', 'ré', 'ré♯', 'mi', 'fa', 'fa♯', 'sol', 'sol♯', 'la', 'la♯', 'si'];
 const noteFr = m => NOTE_FR[m % 12] + (Math.floor(m / 12) - 1);
 
+/* ---------- Suivi de la hauteur : parmi les candidats de chaque image, le chemin de moindre coût ---------- */
+const TRACK = { cmax: 0.6, uv: 0.45, jump: 0.025, switch: 0.05, near: 0.1, sub: 0.2 };
+function trackPitch(cands) {
+  const n = cands.length, path = new Int8Array(n).fill(-1);
+  let prev = [{ cost: 0, from: -1, p: null }];                 // état 0 = pas de hauteur ; états suivants = candidats
+  const back = [];
+  for (let f = 0; f < n; f++) {
+    const cs = cands[f] || [], cur = [], bk = [];
+    for (let s = 0; s <= cs.length; s++) {
+      const voiced = s > 0, e = voiced ? cs[s - 1].c : (cs.length ? TRACK.uv : 0);   // « sans hauteur » ne coûte que s'il existait un candidat
+      let best = Infinity, from = 0;
+      for (let t = 0; t < prev.length; t++) {
+        const pv = t > 0, pp = prev[t].p;
+        const tr = voiced && pv ? TRACK.jump * Math.min(Math.abs(cs[s - 1].p - pp), 12) : voiced !== pv ? TRACK.switch : 0;
+        const v = prev[t].cost + tr; if (v < best) { best = v; from = t; }
+      }
+      cur.push({ cost: best + e, p: voiced ? cs[s - 1].p : null }); bk.push(from);
+    }
+    back.push(bk); prev = cur;
+  }
+  let s = 0; for (let t = 1; t < prev.length; t++) if (prev[t].cost < prev[s].cost) s = t;
+  for (let f = n - 1; f >= 0; f--) { path[f] = s > 0 ? s - 1 : -1; s = back[f][s]; }
+  return path;
+}
+
 /* ---------- 1. Analyse : hauteur toutes les ~20 ms (YIN) puis découpage en notes ---------- */
 async function analyzeSolo(song, solo, onProgress) {
   const blob = await idb('audio', 'readonly', s => s.get(song.id));
@@ -62,6 +87,7 @@ async function analyzeSolo(song, solo, onProgress) {
 
   const d = new Float32Array(tauMax + 1), c = new Float32Array(tauMax + 1), midis = new Array(nF).fill(null);
   let loud = 0, folded = 0, outside = 0;   // folded : conservé à 0 (ancien réglage), outside : détections hors tessiture ignorées
+  const cands = new Array(nF).fill(null), bands = [0, 0, 0, 0, 0];   // bands : images sonores selon la netteté du meilleur creux
   for (let f = 0; f < nF; f++) {
     if (f % 30 === 0) { onProgress && onProgress(f / nF); await new Promise(r => setTimeout(r, 0)); }
     if (rms[f] < gate) continue;
@@ -70,19 +96,30 @@ async function analyzeSolo(song, solo, onProgress) {
     for (let tau = 1; tau <= tauMax; tau++) { let s = 0; for (let j = 0; j < W; j++) { const v = x[o + j] - x[o + j + tau]; s += v * v; } d[tau] = s; }
     let run = 0; c[0] = 1;
     for (let tau = 1; tau <= tauMax; tau++) { run += d[tau]; c[tau] = run ? d[tau] * tau / run : 1; }
-    // premier creux sous 0,2 ; à défaut (mélange dense), le creux le plus net s'il passe sous 0,35
-    let pick = -1, best = 1, bt = -1;
+    // candidats : les creux locaux nets (jusqu'à 4), au lieu d'un seul choix par image. Dans un mélange (live), le bon creux n'est
+    // pas toujours le plus profond : on le choisit ensuite avec la continuité de la mélodie.
+    const list = []; let bestC = 1;
     for (let tau = tauMin; tau < tauMax; tau++) {
-      if (c[tau] < best && c[tau] <= c[tau - 1] && c[tau] <= c[tau + 1]) { best = c[tau]; bt = tau; }
-      if (c[tau] < 0.2) { while (tau + 1 < tauMax && c[tau + 1] < c[tau]) tau++; pick = tau; break; }
+      if (c[tau] > c[tau - 1] || c[tau] > c[tau + 1]) continue;
+      bestC = Math.min(bestC, c[tau]);
+      if (c[tau] >= TRACK.cmax) continue;
+      const a = c[tau - 1], b = c[tau], g = c[tau + 1], den = a - 2 * b + g, t2 = den ? tau + (a - g) / (2 * den) : tau;
+      list.push({ p: 69 + 12 * Math.log2(sr / t2 / 440), c: b });
     }
-    if (pick < 0 && best < 0.35) pick = bt;
-    if (pick >= 0) {
-      const tau = pick, a = c[tau - 1], b = c[tau], g = c[tau + 1], den = a - 2 * b + g;
-      const t2 = den ? tau + (a - g) / (2 * den) : tau;
-      const m = Math.round(69 + 12 * Math.log2(sr / t2 / 440));
-      if (m < rg.lo || m > rg.hi) outside++; else midis[f] = m;
+    bands[bestC < 0.2 ? 0 : bestC < 0.35 ? 1 : bestC < 0.5 ? 2 : bestC < 0.7 ? 3 : 4]++;
+    // un creux à un multiple de la période (octave, octave + quinte, … plus bas) accompagne presque toujours le vrai : on le pénalise
+    // dès qu'un creux à la période entière est presque aussi net, comme le faisait la règle « premier creux »
+    for (const a of list) for (let k = 2; k <= 8; k++) {
+      if (list.some(b => b !== a && Math.abs(b.p - (a.p + 12 * Math.log2(k))) < 0.6 && b.c < a.c + TRACK.near)) { a.c += TRACK.sub; break; }
     }
+    if (list.length) cands[f] = list.sort((p, q) => p.c - q.c).slice(0, 4);
+  }
+  // choix du chemin le plus plausible (Viterbi) : creux net, peu de sauts de hauteur, pas de trou isolé
+  const path = trackPitch(cands);
+  for (let f = 0; f < nF; f++) {
+    const k = path[f]; if (k < 0) continue;
+    const m = Math.round(cands[f][k].p);
+    if (m < rg.lo || m > rg.hi) outside++; else midis[f] = m;
   }
   const voiced = midis.filter(v => v !== null).length;
   // lissage : un trou ou un parasite isolé de 1 à 2 images disparaît
@@ -135,14 +172,15 @@ async function analyzeSolo(song, solo, onProgress) {
   };
   const merged = [];
   for (const nt of raw) { const l = merged[merged.length - 1]; if (l && l.m === nt.m && nt.t0 - l.t1 < 0.04 && !dipBetween(l, nt)) { l.t1 = nt.t1; l.b = nt.b; } else merged.push({ ...nt }); }
-  // erreurs d'octave : une note à plus de 9 demi-tons de ses voisines, mais proche d'elles une octave plus loin, est ramenée
+  // erreurs d'octave : une note à une octave de ses voisines (qui se ressemblent), mais proche d'elles une octave plus loin, est ramenée
   let octFix = 0, isolated = 0;
   const med = arr => { const a = arr.filter(v => v !== undefined).sort((p, q) => p - q); return a.length ? a[Math.floor(a.length / 2)] : null; };
   for (let i = 0; i < merged.length; i++) {
     const nb = []; for (let k = -3; k <= 3; k++) if (k && merged[i + k] && Math.abs(merged[i + k].t0 - merged[i].t0) < 1.5) nb.push(merged[i + k].m);
     const r = nb.length >= 2 ? med(nb) : null; if (r === null) continue;
-    const m = merged[i].m, df = m - r;
-    if (Math.abs(df) >= 9) {
+    const m = merged[i].m, df = m - r, spread = Math.max(...nb) - Math.min(...nb);
+    // une vraie erreur d'octave tombe à 12 demi-tons (± 1) de voisines qui se ressemblent ; un saut de 9, 10 ou plus d'une octave est de la musique
+    if (Math.abs(Math.abs(df) - 12) <= 1 && spread <= 7) {
       const alt = m - 12 * Math.sign(df);
       if (alt >= rg.lo && alt <= rg.hi && Math.abs(alt - r) < Math.abs(df)) { merged[i].m = alt; octFix++; }
     }
@@ -156,7 +194,7 @@ async function analyzeSolo(song, solo, onProgress) {
   });
   const out = kept.map(r => ({ t0: Math.max(0, +r.t0.toFixed(3)), t1: +r.t1.toFixed(3), m: r.m }));
   const diag = { sr, frames: nF, loud, voiced, gate: +gate.toFixed(5), instrument: solo.instrument || '', range: [rg.lo, rg.hi], rangeKnown: rg.known,
-    folded, outside, octFix, isolated, notes: out.length, lo: out.length ? Math.min(...out.map(o => o.m)) : null, hi: out.length ? Math.max(...out.map(o => o.m)) : null };
+    folded, outside, octFix, isolated, bands, track: Array.from(midis, v => v === null ? 0 : v), notes: out.length, lo: out.length ? Math.min(...out.map(o => o.m)) : null, hi: out.length ? Math.max(...out.map(o => o.m)) : null };
   return { raw: out, diag };
 }
 
