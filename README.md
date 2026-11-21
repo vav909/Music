@@ -5,10 +5,19 @@ App mobile (PWA, pensée pour Android) pour repérer, isoler et boucler des solo
 - Ligne sonore simplifiée en petits rectangles, zoomable, tap pour se placer
 - Solos nommés (avec instrument, favori) sauvegardés par morceau, modifiables à tout moment
   (« ⌖ ici » pour caler début/fin pendant l'écoute, boutons −/+ avec pas réglable)
-- Boucle sur le solo sélectionné, tempo 40–120 % **sans changer la hauteur** (`preservesPitch`)
+- Boucle sur le solo sélectionné, tempo 25–150 % **sans changer la hauteur** (`preservesPitch`), montée progressive, pause avec bips
+- Artiste, album, pochette et soliste (recherche automatique, saisie manuelle en secours)
+- Partage des repères de solos par fichier JSON (jamais l'audio)
+- Pédale Bluetooth : espace/↓ lecture, ↑ retour au début du solo
+- Thème clair, blanc et bleu, pensé mobile d'abord
 - Tempo mémorisé par solo ; onglets Morceaux / Solos, filtres favoris et instrument
 - Tout est stocké localement sur le téléphone (IndexedDB), fonctionne hors ligne
 
 ## Essayer
-Activer GitHub Pages (Settings → Pages → branche, dossier `/`), ouvrir l'URL sur Android avec Chrome,
-puis menu ⋮ → « Installer l'application ». En local : `python3 -m http.server` puis ouvrir `localhost:8000`.
+L'app est publiée automatiquement sur GitHub Pages à chaque modification de `main` : ouvrir
+`https://vav909.github.io/Music/`, puis installer l'app depuis le navigateur (Android : menu ⋮ ; iPhone : Partager → « Sur l'écran d'accueil »).
+En local : `python3 -m http.server` puis ouvrir `localhost:8000`.
+
+## Documentation
+- [Mise en ligne et mise à jour](docs/DEPLOIEMENT.md) : réglage unique, déploiement automatique, dépannage.
+- [CLAUDE.md](CLAUDE.md) : décisions du projet et méthode de travail avec Claude.
