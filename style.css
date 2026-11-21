@@ -68,9 +68,10 @@ input.txt { font: inherit; color: var(--text); background: var(--bg); border: 1p
 .tempo { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .tempo input[type=range] { flex: 1; height: 48px; accent-color: var(--accent); }
 .tempo b { min-width: 52px; text-align: right; font-variant-numeric: tabular-nums; }
-.presets { display: flex; gap: 6px; margin-top: 2px; }
-.presets button { flex: 1; min-height: 40px; padding: 0; font-size: 14px; }
-.presets button.on { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.tempo-info { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
+.tempo-info b { font-variant-numeric: tabular-nums; }
+.tempo-info button { min-height: 40px; font-size: 14px; }
+.tempo-info button:disabled { opacity: .45; }
 
 .panel { padding: 10px 12px; }
 .panel h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 4px 2px 8px; text-transform: uppercase; letter-spacing: .04em; }
@@ -155,3 +156,32 @@ input.txt { font: inherit; color: var(--text); background: var(--bg); border: 1p
 .sheet-ctl select { min-height: 44px; font: inherit; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 0 6px; }
 .sheet-ctl button.on { background: var(--accent); color: var(--accent-ink); font-weight: 650; }
 .sheet-ctl button:disabled { opacity: .45; }
+
+/* En-tête du morceau : pochette, titre, artiste · album, crayon */
+#title.song { font-weight: 400; }
+#title .hd { display: flex; align-items: center; gap: 10px; min-width: 0; }
+#title .hd-cover { width: 42px; height: 42px; border-radius: 8px; object-fit: cover; flex: none; background: var(--panel2); display: grid; place-items: center; color: var(--muted); }
+#title .hd-t { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+#title .hd-t b { font-size: 17px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#title .hd-t small { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#editBtn { color: var(--accent); }
+
+/* Modifier le morceau */
+#edit { position: fixed; inset: 0; z-index: 65; background: #fff; display: flex; flex-direction: column; overflow-y: auto; padding-bottom: env(safe-area-inset-bottom); }
+#edit[hidden] { display: none !important; }
+#edit > * { flex: none; }
+.edit-body { display: grid; gap: 12px; padding: 14px; }
+.edit-cover { display: flex; align-items: center; gap: 14px; }
+.edit-cover .cover { width: 112px; height: 112px; }
+.edit-cover button { flex: 1; }
+.fld { display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
+.fld .txt { color: var(--text); font-size: 17px; }
+
+/* Détails du solo */
+.cta2 small { display: block; font-weight: 400; font-size: 13px; opacity: .9; }
+.sheet-tabs { display: flex; gap: 6px; padding: 8px 10px; }
+.sheet-tabs button { flex: 1; min-height: 44px; padding: 0 6px; }
+.sheet-tabs button.on { background: var(--accent); color: var(--accent-ink); font-weight: 650; }
+.diag-list { list-style: none; margin: 0; padding: 4px 14px; }
+.diag-list li { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.diag-list span { color: var(--muted); }

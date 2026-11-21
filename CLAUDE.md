@@ -16,6 +16,7 @@ ralentir sans changer la hauteur. Fichiers statiques sans build : `index.html`, 
 - Priorité : tester d'abord avec un MP3 téléchargé.
 
 ## Déjà dans l'app
+Interface du morceau : en-tête avec pochette, titre, artiste · album et un crayon (modifier titre, artiste, album, pochette, identification) ; tempo au curseur de 10 en 10 (− / + de 5) avec « Tempo original » ; bouton « Détails du solo » → trois onglets : Partition, Lecture, Diagnostic.
 Bibliothèque de morceaux (MP3 importés, stockage local), solos nommés avec instrument, soliste et favori, artiste/album/pochette
 (recherche automatique iTunes, sinon saisie), boucle, tempo 25–150 % sans changer la hauteur, montée progressive (+5 % par passage),
 pause avec bips entre deux passages, pédale Bluetooth (espace/↓ lecture, ↑ début du solo), export/import JSON des repères (sans audio),
