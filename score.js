@@ -47,7 +47,13 @@ async function analyzeSolo(song, solo, onProgress) {
   for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) x[i] += d[i0 + i] / buf.numberOfChannels; }
 
   const rg = rangeFor(solo.instrument), fOf = m => 440 * Math.pow(2, (m - 69) / 12);
-  const sLo = Math.max(rg.lo - 12, 36), tauMax = Math.floor(sr / fOf(sLo - 1)), tauMin = Math.max(2, Math.floor(sr / fOf(rg.hi + 3)));   // on cherche une octave sous la tessiture : les notes graves sont ramenées dans la plage
+  // dans un mélange (basse, piano, batterie), les graves masquent le soliste : on les coupe (filtre passe-haut 4e ordre)
+  // juste sous la plus basse note de l'instrument, puis on ne cherche que des hauteurs DANS la tessiture
+  const hp = fc => { const w = 2 * Math.PI * fc / sr, cs = Math.cos(w), al = Math.sin(w) / (2 * 0.7071), a0 = 1 + al;
+    const b0 = (1 + cs) / 2 / a0, b1 = -(1 + cs) / a0, a1 = -2 * cs / a0, a2 = (1 - al) / a0; let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (let i = 0; i < n; i++) { const v = x[i], y = b0 * v + b1 * x1 + b0 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = v; y2 = y1; y1 = y; x[i] = y; } };
+  if (rg.known) { hp(fOf(rg.lo) * 0.9); hp(fOf(rg.lo) * 0.9); }
+  const tauMax = Math.floor(sr / fOf(rg.lo - 1)), tauMin = Math.max(2, Math.floor(sr / fOf(rg.hi + 3)));
   const W = Math.max(1024, Math.ceil(tauMax * 1.5)), hop = Math.round(sr * 0.02);
   const nF = Math.max(0, Math.floor((n - W - tauMax) / hop));
   const rms = new Float32Array(nF);
@@ -55,7 +61,7 @@ async function analyzeSolo(song, solo, onProgress) {
   const ref = [...rms].sort((a, b) => a - b)[Math.floor(nF * 0.9)] || 0, gate = ref * 0.12;
 
   const d = new Float32Array(tauMax + 1), c = new Float32Array(tauMax + 1), midis = new Array(nF).fill(null);
-  let loud = 0, folded = 0, outside = 0;
+  let loud = 0, folded = 0, outside = 0;   // folded : conservé à 0 (ancien réglage), outside : détections hors tessiture ignorées
   for (let f = 0; f < nF; f++) {
     if (f % 30 === 0) { onProgress && onProgress(f / nF); await new Promise(r => setTimeout(r, 0)); }
     if (rms[f] < gate) continue;
@@ -64,16 +70,18 @@ async function analyzeSolo(song, solo, onProgress) {
     for (let tau = 1; tau <= tauMax; tau++) { let s = 0; for (let j = 0; j < W; j++) { const v = x[o + j] - x[o + j + tau]; s += v * v; } d[tau] = s; }
     let run = 0; c[0] = 1;
     for (let tau = 1; tau <= tauMax; tau++) { run += d[tau]; c[tau] = run ? d[tau] * tau / run : 1; }
+    // premier creux sous 0,2 ; à défaut (mélange dense), le creux le plus net s'il passe sous 0,35
+    let pick = -1, best = 1, bt = -1;
     for (let tau = tauMin; tau < tauMax; tau++) {
-      if (c[tau] < 0.15) {
-        while (tau + 1 < tauMax && c[tau + 1] < c[tau]) tau++;
-        const a = c[tau - 1], b = c[tau], g = c[tau + 1], den = a - 2 * b + g;
-        const t2 = den ? tau + (a - g) / (2 * den) : tau;
-        let m = Math.round(69 + 12 * Math.log2(sr / t2 / 440));
-        if (m < rg.lo || m > rg.hi) { while (m < rg.lo) m += 12; while (m > rg.hi) m -= 12; if (m >= rg.lo && m <= rg.hi) folded++; else { outside++; break; } }
-        midis[f] = m;
-        break;
-      }
+      if (c[tau] < best && c[tau] <= c[tau - 1] && c[tau] <= c[tau + 1]) { best = c[tau]; bt = tau; }
+      if (c[tau] < 0.2) { while (tau + 1 < tauMax && c[tau + 1] < c[tau]) tau++; pick = tau; break; }
+    }
+    if (pick < 0 && best < 0.35) pick = bt;
+    if (pick >= 0) {
+      const tau = pick, a = c[tau - 1], b = c[tau], g = c[tau + 1], den = a - 2 * b + g;
+      const t2 = den ? tau + (a - g) / (2 * den) : tau;
+      const m = Math.round(69 + 12 * Math.log2(sr / t2 / 440));
+      if (m < rg.lo || m > rg.hi) outside++; else midis[f] = m;
     }
   }
   const voiced = midis.filter(v => v !== null).length;
@@ -319,10 +327,14 @@ function sheetHTML(solo) {
 }
 function rangeInfo(solo) {
   const r = rangeFor(solo.instrument);
-  const d = solo.score && solo.score.diag, nf = d && d.notes ? Math.round(100 * d.folded / Math.max(1, d.loud)) : 0;
+  const d = solo.score && solo.score.diag;
   let t = r.known ? `Tessiture utilisée : ${noteFr(r.lo)} – ${noteFr(r.hi)} (${esc(r.label)}). Change l’instrument du solo pour la modifier.`
     : 'Instrument non reconnu : tessiture large (do3 – do7). Indique l’instrument du soliste (flûte, sax, trompette, piano…) pour de meilleurs résultats.';
-  if (nf >= 25) t += ` Attention : ${nf} % de ce qui est entendu était hors tessiture et a été ramené dans la plage. Vérifie l’instrument du soliste.`;
+  if (d && d.loud) {
+    const vr = Math.round(100 * d.voiced / d.loud), oo = Math.round(100 * d.outside / d.loud);
+    if (vr < 40) t += ` Attention : le soliste n’est reconnu que dans ${vr} % du passage (accompagnement trop présent) : la partition sera très incomplète.`;
+    if (oo >= 25) t += ` ${oo} % des sons détectés étaient hors tessiture et ont été ignorés : vérifie l’instrument du soliste.`;
+  }
   return t;
 }
 function drawSheet() {
