@@ -18,10 +18,11 @@ ralentir sans changer la hauteur. Fichiers statiques sans build : `index.html`, 
 ## Déjà dans l'app
 Bibliothèque de morceaux (MP3 importés, stockage local), solos nommés avec instrument, soliste et favori, artiste/album/pochette
 (recherche automatique iTunes, sinon saisie), boucle, tempo 25–150 % sans changer la hauteur, montée progressive (+5 % par passage),
-pause avec bips entre deux passages, pédale Bluetooth (espace/↓ lecture, ↑ début du solo), export/import JSON des repères (sans audio).
+pause avec bips entre deux passages, pédale Bluetooth (espace/↓ lecture, ↑ début du solo), export/import JSON des repères (sans audio),
+partition du solo sélectionné (`score.js` : analyse YIN, quantification en doubles-croches, affichage SVG, correction note par note, export MIDI/MusicXML).
 
 ## À faire ensuite
-Import Drive, import d'une playlist Deezer (titres seulement, puis association aux fichiers), partition modifiable et transposable,
+Import Drive, import d'une playlist Deezer (titres seulement, puis association aux fichiers), transposition de la partition, partition plus fiable sur piste isolée (serveur),
 détection automatique des solos (serveur), changement de tonalité.
 
 ## Comment modifier l'app et la mettre en ligne
