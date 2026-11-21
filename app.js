@@ -81,7 +81,13 @@ async function importFiles(files) {
     toast(`Analyse de « ${file.name} »…`);
     try {
       const { duration, peaks } = await analyze(file);
-      const song = { id: uid(), title: file.name.replace(/\.[^.]+$/, ''), duration, peaks, solos: [], added: Date.now() };
+      let tags = null; try { tags = await readTags(file); } catch (e) { console.warn('étiquettes illisibles', e); }
+      const song = { id: uid(), title: (tags && tags.title) || file.name.replace(/\.[^.]+$/, ''), file: file.name, duration, peaks, solos: [], added: Date.now(), tagsRead: true };
+      if (tags) {
+        song.tags = { title: tags.title, artist: tags.artist, album: tags.album, hasCover: !!tags.coverBytes };
+        song.artist = tags.artist; song.album = tags.album;
+        if (tags.coverBytes) song.cover = await coverToDataUrl(tags.coverBytes, tags.coverMime);
+      }
       await idb('audio', 'readwrite', s => s.put(file, song.id));
       await saveSongNow(song);
       S.songs.push(song);
@@ -216,7 +222,7 @@ function renderPanel() {
   let h = `<div class="meta">${song.cover ? `<img class="cover" src="${esc(song.cover)}" alt="Pochette" onerror="this.outerHTML='<div class=&quot;cover ph&quot;>♪</div>'">` : '<div class="cover ph">♪</div>'}
     <div class="meta-f"><input class="txt" id="songArtist" value="${esc(song.artist)}" placeholder="Artiste" aria-label="Artiste">
     <input class="txt" id="songAlbum" value="${esc(song.album)}" placeholder="Album" aria-label="Album">
-    <button data-act="lookup">Trouver artiste et pochette</button></div></div>`;
+    <button data-act="lookup">Trouver artiste et pochette</button><button data-act="diag">Envoyer un diagnostic</button></div></div>`;
   if (act) {
     h += `<div class="editor">
       <input class="txt" id="soloName" value="${esc(act.name)}" placeholder="Nom du solo" aria-label="Nom du solo">
@@ -374,23 +380,93 @@ function editEdge(w, newT) {
 }
 
 /* ---------- Artiste, album, pochette (recherche automatique, saisie manuelle en secours) ---------- */
-async function lookup() {
-  const song = S.song; if (!song) return;
-  const term = song.title.replace(/^\s*\d+[\s._-]+/, '').replace(/[_]+/g, ' ').replace(/\([^)]*\)|\[[^\]]*\]/g, ' ').trim();
-  toast('Recherche en cours…');
+const cleanTerm = t => String(t || '').replace(/^\s*\d+[\s._-]+/, '').replace(/_+/g, ' ').replace(/\([^)]*\)|\[[^\]]*\]/g, ' ').replace(/\s+/g, ' ').trim();
+// étiquettes du fichier (titre, artiste, album, pochette) lues une fois pour les morceaux déjà importés
+async function applyFileTags(song) {
+  if (song.tagsRead) return false;
+  song.tagsRead = true;
+  const blob = await idb('audio', 'readonly', st => st.get(song.id));
+  const tags = blob ? await readTags(blob) : null;
+  if (!tags) { saveSoon(); return false; }
+  song.tags = { title: tags.title, artist: tags.artist, album: tags.album, hasCover: !!tags.coverBytes };
+  let got = false;
+  if (tags.artist && !song.artist) { song.artist = tags.artist; got = true; }
+  if (tags.album && !song.album) { song.album = tags.album; got = true; }
+  if (tags.coverBytes && !song.cover) { song.cover = await coverToDataUrl(tags.coverBytes, tags.coverMime); got = !!song.cover || got; }
+  saveSoon(); return got;
+}
+async function itunesSearch(term) {
   const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 8000);
   try {
-    const res = await fetch('https://itunes.apple.com/search?media=music&entity=song&limit=1&term=' + encodeURIComponent(term), { signal: ctl.signal });
-    const hit = (await res.json()).results?.[0];
-    if (!hit) { toast('Rien trouvé : saisis l\u2019artiste et l\u2019album à la main'); return; }
-    song.artist = song.artist || hit.artistName || '';
-    song.album = song.album || hit.collectionName || '';
-    if (hit.artworkUrl100) song.cover = hit.artworkUrl100.replace('100x100bb', '600x600bb');
-    saveSoon(); renderPanel();
-    toast(`Trouvé : ${hit.artistName} — ${hit.trackName}. Vérifie que c\u2019est le bon morceau.`);
-  } catch (e) {
-    toast('Recherche impossible (hors ligne ?) : saisie manuelle possible');
+    const res = await fetch('https://itunes.apple.com/search?media=music&entity=song&limit=12&term=' + encodeURIComponent(term), { signal: ctl.signal });
+    return (await res.json()).results || [];
   } finally { clearTimeout(to); }
+}
+function rankHits(hits, song) {
+  const core = norm(cleanTerm((song.tags && song.tags.title) || song.title)), art = norm(song.artist), live = /live|concert/i.test(song.title);
+  const sc = h => (core && (norm(h.trackName).includes(core) || core.includes(norm(h.trackName))) ? 3 : 0)
+    + (art && norm(h.artistName).includes(art) ? 2 : 0) + (live === /live|concert/i.test(h.trackName + ' ' + h.collectionName) ? 1 : 0);
+  return hits.map((h, i) => [h, i]).sort((a, b) => sc(b[0]) - sc(a[0]) || a[1] - b[1]).map(x => x[0]);
+}
+const CH = { hits: [], term: '', busy: false };
+function renderChooser(msg) {
+  const el = $('#chooser'); el.hidden = false; document.body.style.overflow = 'hidden';
+  el.innerHTML = `<div class="sheet-top"><button class="icon-btn" data-act="ch-close" aria-label="Fermer">←</button><b>Choisir le bon morceau</b></div>
+    <div class="ch-search"><input class="txt" id="chTerm" value="${esc(CH.term)}" placeholder="Artiste et titre" aria-label="Recherche"><button data-act="ch-search">Chercher</button></div>
+    <p class="hint">${esc(msg || 'Touche la bonne ligne : artiste, album et pochette seront repris. Tu peux corriger la recherche.')}</p>
+    <div class="ch-list">${CH.hits.map((h, i) => `<button class="ch-hit" data-act="ch-pick" data-i="${i}">
+      <img src="${esc(h.artworkUrl100 || '')}" alt="" onerror="this.style.visibility='hidden'"><span><b>${esc(h.trackName)}</b><small>${esc(h.artistName)}</small><small>${esc(h.collectionName || '')}${h.releaseDate ? ' · ' + esc(h.releaseDate.slice(0, 4)) : ''}</small></span></button>`).join('')}</div>`;
+  const inp = $('#chTerm'); if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); chSearch(inp.value); } });
+}
+function closeChooser() { $('#chooser').hidden = true; if ($('#sheet').hidden) document.body.style.overflow = ''; }
+async function chSearch(term) {
+  const song = S.song; if (!song || CH.busy) return;
+  CH.busy = true; CH.term = term;
+  try {
+    const hits = rankHits(await itunesSearch(term), song);
+    CH.hits = hits;
+    song.lookupLog = { term, at: new Date().toISOString(), n: hits.length, top: hits.slice(0, 5).map(h => ({ track: h.trackName, artist: h.artistName, album: h.collectionName })) };
+    saveSoon();
+    renderChooser(hits.length ? '' : 'Rien trouvé : change les mots de la recherche, ou ferme et saisis à la main.');
+  } catch (e) {
+    song.lookupLog = { term, at: new Date().toISOString(), error: String(e && e.message || e) }; saveSoon();
+    renderChooser('Recherche impossible (hors ligne ?). Ferme et saisis l’artiste et l’album à la main.');
+  }
+  CH.busy = false;
+}
+async function lookup() {
+  const song = S.song; if (!song) return;
+  toast('Recherche en cours…');
+  let got = false; try { got = await applyFileTags(song); } catch (e) { console.warn(e); }
+  if (got) { renderPanel(); toast('Infos lues dans le fichier MP3'); }
+  const term = [song.artist, cleanTerm((song.tags && song.tags.title) || song.title)].filter(Boolean).join(' ');
+  CH.hits = []; CH.term = term; renderChooser('Recherche en cours…');
+  await chSearch(term);
+}
+function pickHit(i) {
+  const song = S.song, h = CH.hits[i]; if (!song || !h) return;
+  song.artist = h.artistName || song.artist; song.album = h.collectionName || song.album;
+  if (h.artworkUrl100) song.cover = h.artworkUrl100.replace('100x100bb', '600x600bb');
+  if (song.lookupLog) song.lookupLog.chosen = { track: h.trackName, artist: h.artistName, album: h.collectionName };
+  saveSoon(); closeChooser(); renderPanel(); toast('Artiste, album et pochette mis à jour');
+}
+
+/* ---------- Diagnostic : un petit fichier (sans audio) à m'envoyer pour comprendre les erreurs ---------- */
+async function diagnostic() {
+  const song = S.song, solo = curSolo(); if (!song) { toast('Ouvre un morceau d’abord'); return; }
+  const sc = solo && solo.score;
+  const rep = {
+    app: 'solo-looper-diag', version: 3, date: new Date().toISOString(), ua: navigator.userAgent, viewport: [innerWidth, innerHeight],
+    song: { title: song.title, file: song.file || null, artist: song.artist || '', album: song.album || '', duration: song.duration,
+      coverKind: !song.cover ? 'aucune' : /^data:/.test(song.cover) ? 'intégrée au fichier' : 'en ligne', tags: song.tags || null, lookup: song.lookupLog || null },
+    solo: solo ? { name: solo.name, instrument: solo.instrument, soloist: solo.soloist, start: solo.start, end: solo.end, tempoPct: solo.tempo } : null,
+    score: sc ? { bpm: sc.bpm, lead: sc.lead, swing: !!sc.swing, tapped: !!sc.tapped, flats: !!sc.flats, edited: !!sc.edited, diag: sc.diag || null, raw: sc.raw, notes: sc.notes } : null,
+  };
+  const file = new File([JSON.stringify(rep, null, 1)], 'diagnostic-solo-looper.json', { type: 'application/json' });
+  try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'Diagnostic Solo Looper' }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name;
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast('Diagnostic enregistré : envoie-le moi (aucun audio dedans)');
 }
 
 /* ---------- Partage : seulement les repères, jamais l'audio ---------- */
@@ -471,6 +547,10 @@ document.addEventListener('click', async e => {
     case 'gap': ensureBeep(); S.gap = [0, 1, 2, 4][([0, 1, 2, 4].indexOf(S.gap) + 1) % 4]; updateTransport(); break;
     case 'ramp': S.ramp = !S.ramp; S.passes = 0; if (S.ramp && S.tempo >= 100) setTempo(60, false); updateTransport(); break;
     case 'lookup': lookup(); break;
+    case 'diag': diagnostic(); break;
+    case 'ch-close': closeChooser(); break;
+    case 'ch-search': { const i = $('#chTerm'); if (i) chSearch(i.value); break; }
+    case 'ch-pick': pickHit(+d.i); break;
     case 'export': exportSolos(); break;
     case 'import': $('#jsonInput').click(); break;
     case 'step': S.step = STEPS[(STEPS.indexOf(S.step) + 1) % STEPS.length]; renderPanel(); break;

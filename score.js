@@ -16,6 +16,25 @@ function spell(m, flats) {
   return { dn: oct * 7 + t[0], acc: t[1], step: t[0], oct };
 }
 
+/* ---------- 0. Tessiture des instruments (hauteurs réelles, numéros MIDI ; 60 = do4) ---------- */
+const RANGES = [
+  [/piccolo/, 'piccolo', 74, 108], [/fl[uû]te\s*alto|alto\s*fl/, 'flûte alto', 55, 91], [/fl[uû]t|flute/, 'flûte', 60, 96],
+  [/soprano|sopranino/, 'sax soprano', 56, 89], [/bariton|baryton|bari\b/, 'sax baryton', 36, 70],
+  [/t[eé]nor/, 'sax ténor', 44, 77], [/\balto\b|sax/, 'sax alto', 49, 82],
+  [/trompet|trumpet|bugle|cornet/, 'trompette', 52, 84], [/trombone/, 'trombone', 40, 72],
+  [/clarinette|clarinet/, 'clarinette', 50, 94], [/hautbois|oboe/, 'hautbois', 58, 93], [/basson|bassoon/, 'basson', 34, 75],
+  [/\bcor\b|horn/, 'cor', 41, 77], [/violon|violin/, 'violon', 55, 100], [/vibra|marimba|xylo/, 'vibraphone', 53, 89],
+  [/guitar/, 'guitare', 40, 88], [/piano|clavier|rhodes|keys|orgue|organ/, 'piano', 36, 96], [/voix|chant|vocal|voice/, 'voix', 48, 84],
+  [/basse|bass/, 'basse', 28, 67],
+];
+function rangeFor(instr) {
+  const t = String(instr || '').toLowerCase();
+  const r = RANGES.find(x => x[0].test(t));
+  return r ? { label: r[1], lo: r[2], hi: r[3], known: true } : { label: instr ? instr : 'instrument inconnu', lo: 48, hi: 96, known: false };
+}
+const NOTE_FR = ['do', 'do♯', 'ré', 'ré♯', 'mi', 'fa', 'fa♯', 'sol', 'sol♯', 'la', 'la♯', 'si'];
+const noteFr = m => NOTE_FR[m % 12] + (Math.floor(m / 12) - 1);
+
 /* ---------- 1. Analyse : hauteur toutes les ~20 ms (YIN) puis découpage en notes ---------- */
 async function analyzeSolo(song, solo, onProgress) {
   const blob = await idb('audio', 'readonly', s => s.get(song.id));
@@ -27,16 +46,20 @@ async function analyzeSolo(song, solo, onProgress) {
   const n = i1 - i0, x = new Float32Array(n);
   for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) x[i] += d[i0 + i] / buf.numberOfChannels; }
 
-  const W = 1024, hop = Math.round(sr * 0.02), tauMax = Math.floor(sr / 100), tauMin = Math.max(2, Math.floor(sr / 2100));
+  const rg = rangeFor(solo.instrument), fOf = m => 440 * Math.pow(2, (m - 69) / 12);
+  const sLo = Math.max(rg.lo - 12, 36), tauMax = Math.floor(sr / fOf(sLo - 1)), tauMin = Math.max(2, Math.floor(sr / fOf(rg.hi + 3)));   // on cherche une octave sous la tessiture : les notes graves sont ramenées dans la plage
+  const W = Math.max(1024, Math.ceil(tauMax * 1.5)), hop = Math.round(sr * 0.02);
   const nF = Math.max(0, Math.floor((n - W - tauMax) / hop));
   const rms = new Float32Array(nF);
   for (let f = 0; f < nF; f++) { let s = 0; const o = f * hop; for (let j = 0; j < W; j += 2) s += x[o + j] * x[o + j]; rms[f] = Math.sqrt(s / (W / 2)); }
   const ref = [...rms].sort((a, b) => a - b)[Math.floor(nF * 0.9)] || 0, gate = ref * 0.12;
 
   const d = new Float32Array(tauMax + 1), c = new Float32Array(tauMax + 1), midis = new Array(nF).fill(null);
+  let loud = 0, folded = 0, outside = 0;
   for (let f = 0; f < nF; f++) {
     if (f % 30 === 0) { onProgress && onProgress(f / nF); await new Promise(r => setTimeout(r, 0)); }
     if (rms[f] < gate) continue;
+    loud++;
     const o = f * hop;
     for (let tau = 1; tau <= tauMax; tau++) { let s = 0; for (let j = 0; j < W; j++) { const v = x[o + j] - x[o + j + tau]; s += v * v; } d[tau] = s; }
     let run = 0; c[0] = 1;
@@ -46,18 +69,25 @@ async function analyzeSolo(song, solo, onProgress) {
         while (tau + 1 < tauMax && c[tau + 1] < c[tau]) tau++;
         const a = c[tau - 1], b = c[tau], g = c[tau + 1], den = a - 2 * b + g;
         const t2 = den ? tau + (a - g) / (2 * den) : tau;
-        const m = Math.round(69 + 12 * Math.log2(sr / t2 / 440));
-        if (m >= 36 && m <= 100) midis[f] = m;
+        let m = Math.round(69 + 12 * Math.log2(sr / t2 / 440));
+        if (m < rg.lo || m > rg.hi) { while (m < rg.lo) m += 12; while (m > rg.hi) m -= 12; if (m >= rg.lo && m <= rg.hi) folded++; else { outside++; break; } }
+        midis[f] = m;
         break;
       }
     }
   }
+  const voiced = midis.filter(v => v !== null).length;
   // lissage : un trou ou un parasite isolé de 1 à 2 images disparaît
   for (let i = 1; i < nF - 1; i++) { if (midis[i] !== midis[i - 1] && midis[i - 1] === midis[i + 1]) midis[i] = midis[i - 1]; }
   for (let i = 1; i < nF - 2; i++) { if (midis[i] === null && midis[i + 1] === null && midis[i - 1] !== null && midis[i - 1] === midis[i + 2]) midis[i] = midis[i + 1] = midis[i - 1]; }
+  // un saut de hauteur qui dure moins de 3 images (60 ms) est un parasite : on le remplace par la note qui précède
+  for (let i = 1; i < nF - 3; i++) {
+    const m = midis[i];
+    if (m !== null && midis[i - 1] !== null && Math.abs(m - midis[i - 1]) >= 3 && midis[i + 1] !== m && midis[i + 2] !== m && midis[i + 1] !== null) midis[i] = midis[i - 1];
+  }
   const tOf = f => (f * hop + W / 2) / sr, step = hop / sr, raw = [];
   let cur = null;
-  const close = f => { if (cur) { cur.t1 = tOf(f - 1) + step / 2; if (cur.t1 - cur.t0 >= 0.06) raw.push(cur); cur = null; } };
+  const close = f => { if (cur) { cur.t1 = tOf(f - 1) + step / 2; if (cur.t1 - cur.t0 >= 0.08) raw.push(cur); cur = null; } };
   for (let f = 0; f < nF; f++) {
     const m = midis[f];
     if (m === null) close(f);
@@ -68,12 +98,34 @@ async function analyzeSolo(song, solo, onProgress) {
   // fusionne deux morceaux de même hauteur séparés par moins de 40 ms
   const merged = [];
   for (const nt of raw) { const l = merged[merged.length - 1]; if (l && l.m === nt.m && nt.t0 - l.t1 < 0.04) l.t1 = nt.t1; else merged.push({ ...nt }); }
-  return merged.map(r => ({ t0: Math.max(0, +r.t0.toFixed(3)), t1: +r.t1.toFixed(3), m: r.m }));
+  // erreurs d'octave : une note à plus de 9 demi-tons de ses voisines, mais proche d'elles une octave plus loin, est ramenée
+  let octFix = 0, isolated = 0;
+  const med = arr => { const a = arr.filter(v => v !== undefined).sort((p, q) => p - q); return a.length ? a[Math.floor(a.length / 2)] : null; };
+  for (let i = 0; i < merged.length; i++) {
+    const nb = []; for (let k = -3; k <= 3; k++) if (k && merged[i + k] && Math.abs(merged[i + k].t0 - merged[i].t0) < 1.5) nb.push(merged[i + k].m);
+    const r = nb.length >= 2 ? med(nb) : null; if (r === null) continue;
+    const m = merged[i].m, df = m - r;
+    if (Math.abs(df) >= 9) {
+      const alt = m - 12 * Math.sign(df);
+      if (alt >= rg.lo && alt <= rg.hi && Math.abs(alt - r) < Math.abs(df)) { merged[i].m = alt; octFix++; }
+    }
+  }
+  // notes isolées : plus d'une octave et demie d'écart avec les deux voisines et très courtes = bruit
+  const kept = merged.filter((nt, i) => {
+    const p = merged[i - 1], q = merged[i + 1], short = nt.t1 - nt.t0 < 0.15;
+    const far = v => v && Math.abs(v.m - nt.m) > 14 && Math.abs(v.t0 - nt.t0) < 1;
+    const bad = short && ((p && q && far(p) && far(q)) || (!p && far(q)) || (!q && far(p)));
+    if (bad) isolated++; return !bad;
+  });
+  const out = kept.map(r => ({ t0: Math.max(0, +r.t0.toFixed(3)), t1: +r.t1.toFixed(3), m: r.m }));
+  const diag = { sr, frames: nF, loud, voiced, gate: +gate.toFixed(5), instrument: solo.instrument || '', range: [rg.lo, rg.hi], rangeKnown: rg.known,
+    folded, outside, octFix, isolated, notes: out.length, lo: out.length ? Math.min(...out.map(o => o.m)) : null, hi: out.length ? Math.max(...out.map(o => o.m)) : null };
+  return { raw: out, diag };
 }
 
 /* ---------- 2. Tempo et quantification (grille de doubles-croches) ---------- */
-function phaseFor(raw, bpm) {
-  const P = 15 / bpm; let re = 0, im = 0;   // P = une double-croche
+function phaseFor(raw, bpm, swing) {
+  const P = swing ? 60 / bpm : 15 / bpm; let re = 0, im = 0;   // P = une noire (swing) ou une double-croche
   for (const n of raw) { const a = 2 * Math.PI * n.t0 / P; re += Math.cos(a); im += Math.sin(a); }
   let lead = (Math.atan2(im, re) / (2 * Math.PI)) * P;
   const first = raw.length ? raw[0].t0 : 0;
@@ -92,16 +144,18 @@ function estimateBpm(raw) {
   const hit = res.find(([, r]) => r >= best * 0.93);
   return Math.round(hit[0]);
 }
-function quantize(raw, bpm, lead) {
-  const g = 60 / bpm / 4, notes = []; let end = 0;
+function quantize(raw, bpm, lead, swing) {
+  const beat = 60 / bpm, g = beat / 4, notes = []; let end = 0;
+  // swing : les croches sont écrites droites ; la 2e croche de chaque temps tombe au 2/3 du temps
+  const at = t => { const b = (t - lead) / beat, k = Math.floor(b), f = b - k; return 2 * (2 * k + (f < 0.33 ? 0 : f < 0.83 ? 1 : 2)); };
   for (const n of raw) {
-    let p = Math.round((n.t0 - lead) / g); const e = Math.round((n.t1 - lead) / g);
+    let p = (swing ? at(n.t0) : Math.round((n.t0 - lead) / g)) + 0; const e = swing ? at(n.t1) : Math.round((n.t1 - lead) / g);
     if (p < end) p = end;
-    const l = Math.max(1, e - p); notes.push({ p, l, m: n.m }); end = p + l;
+    const l = Math.max(swing ? 2 : 1, e - p); notes.push({ p, l, m: n.m }); end = p + l;
   }
   return notes;
 }
-function requantize(sc) { sc.lead = phaseFor(sc.raw, sc.bpm); sc.notes = quantize(sc.raw, sc.bpm, sc.lead); sc.edited = false; }
+function requantize(sc) { sc.lead = phaseFor(sc.raw, sc.bpm, sc.swing); sc.notes = quantize(sc.raw, sc.bpm, sc.lead, sc.swing); sc.edited = false; }
 
 /* ---------- 3. Événements : coupe aux barres de mesure et aux durées écrivables ---------- */
 function buildEvents(notes) {
@@ -255,10 +309,21 @@ function sheetHTML(solo) {
       <button data-act="bpm-mul" data-f="0.5">÷2</button><button data-act="bpm-mul" data-f="2">×2</button>
       <button data-act="acc">${sc && sc.flats ? '♭' : '♯'}</button><button data-act="zoom-score" aria-label="Mesures par ligne">${SH.bars} mes.</button>
     </div>
+    <div class="sheet-ctl"><button data-act="tap">Taper le tempo</button><button data-act="swing">Rythme : ${sc && sc.swing ? 'swing' : 'droit'}</button></div>
+    <p class="hint" id="rangeInfo">${rangeInfo(solo)}</p>
     <div id="scoreWrap">${sc ? '' : '<p class="hint" id="scMsg">Analyse du solo…</p>'}</div>
     <div id="noteBar"></div>
     <div class="sheet-exp"><button data-act="reanalyze">Réanalyser</button><button data-act="exp-midi">MIDI</button><button data-act="exp-xml">MusicXML</button></div>
+    <div class="sheet-exp"><button data-act="diag">Envoyer un diagnostic</button></div>
     <p class="hint">Brouillon automatique : touche une note pour l’écouter et la corriger. Le tempo se règle à l’oreille (÷2 / ×2 si le rythme est doublé ou divisé).</p>`;
+}
+function rangeInfo(solo) {
+  const r = rangeFor(solo.instrument);
+  const d = solo.score && solo.score.diag, nf = d && d.notes ? Math.round(100 * d.folded / Math.max(1, d.loud)) : 0;
+  let t = r.known ? `Tessiture utilisée : ${noteFr(r.lo)} – ${noteFr(r.hi)} (${esc(r.label)}). Change l’instrument du solo pour la modifier.`
+    : 'Instrument non reconnu : tessiture large (do3 – do7). Indique l’instrument du soliste (flûte, sax, trompette, piano…) pour de meilleurs résultats.';
+  if (nf >= 25) t += ` Attention : ${nf} % de ce qui est entendu était hors tessiture et a été ramené dans la plage. Vérifie l’instrument du soliste.`;
+  return t;
 }
 function drawSheet() {
   const sc = sc$(), wrap = $('#scoreWrap'); if (!sc || !wrap) return;
@@ -280,11 +345,10 @@ async function runAnalysis() {
   SH.busy = true; SH.sel = null;
   const wrap = $('#scoreWrap'); if (wrap) wrap.innerHTML = '<p class="hint" id="scMsg">Analyse du solo… 0 %</p>';
   try {
-    const raw = await analyzeSolo(song, solo, p => { const m = $('#scMsg'); if (m) m.textContent = `Analyse du solo… ${Math.round(p * 100)} %`; });
+    const { raw, diag } = await analyzeSolo(song, solo, p => { const m = $('#scMsg'); if (m) m.textContent = `Analyse du solo… ${Math.round(p * 100)} %`; });
     if (!raw.length) { toast('Aucune note détectée dans ce solo'); }
-    const bpm = estimateBpm(raw);
-    const old = solo.score;
-    solo.score = { bpm, lead: 0, raw, notes: [], edited: false, flats: old ? old.flats : false };
+    const old = solo.score, bpm = old && old.tapped ? old.bpm : estimateBpm(raw);
+    solo.score = { bpm, lead: 0, raw, notes: [], edited: false, flats: old ? old.flats : false, swing: old ? !!old.swing : false, tapped: old ? !!old.tapped : false, diag };
     requantize(solo.score); saveSoon();
   } catch (e) { console.error(e); toast('Analyse impossible pour ce fichier'); }
   SH.busy = false;
@@ -294,7 +358,7 @@ function openSheet() {
   const solo = curSolo(); if (!solo) return;
   SH.sel = null; const sh = $('#sheet'); sh.hidden = false; document.body.style.overflow = 'hidden';
   sh.innerHTML = sheetHTML(solo); updateSheetPlay();
-  if (solo.score) drawSheet(); else runAnalysis();
+  if (solo.score && solo.score.diag) drawSheet(); else if (solo.score && solo.score.edited) drawSheet(); else runAnalysis();
 }
 function closeSheet() { $('#sheet').hidden = true; document.body.style.overflow = ''; audio.pause(); }
 
@@ -304,11 +368,24 @@ function edit(fn) {
   if (fn(sc, nt, sc.notes[SH.sel - 1], sc.notes[SH.sel + 1]) !== false) { sc.edited = true; saveSoon(); }
   drawSheet();
 }
+const TAP = { t: [], ok: false };
+function tapTempo() {
+  const sc = sc$(); if (!sc) return;
+  const now = performance.now();
+  if (TAP.t.length && now - TAP.t[TAP.t.length - 1] > 2000) { TAP.t = []; TAP.ok = false; }
+  TAP.t.push(now); TAP.t = TAP.t.slice(-9);
+  if (TAP.t.length < 4) { toast('Tape en rythme sur les noires (' + TAP.t.length + '/4)…'); return; }
+  if (sc.edited && !TAP.ok) { if (!confirm('Changer le tempo refait la partition et efface tes corrections. Continuer ?')) { TAP.t = []; return; } TAP.ok = true; }
+  const iv = []; for (let i = 1; i < TAP.t.length; i++) iv.push(TAP.t[i] - TAP.t[i - 1]);
+  iv.sort((a, b) => a - b); const m = iv[Math.floor(iv.length / 2)];
+  sc.bpm = clampN(Math.round(60000 / m), 30, 300); sc.tapped = true; requantize(sc); SH.sel = null; saveSoon();
+  const l = $('#bpmLbl'); if (l) l.textContent = sc.bpm; drawSheet();
+}
 function changeBpm(next) {
   const sc = sc$(); if (!sc) return;
   next = clampN(next, 30, 300);
   if (sc.edited && !confirm('Changer le tempo refait la partition et efface tes corrections. Continuer ?')) return;
-  sc.bpm = next; requantize(sc); SH.sel = null; saveSoon(); $('#bpmLbl').textContent = Math.round(sc.bpm); drawSheet();
+  sc.bpm = next; sc.tapped = true; requantize(sc); SH.sel = null; saveSoon(); $('#bpmLbl').textContent = Math.round(sc.bpm); drawSheet();
 }
 
 /* ---------- 6. Export ---------- */
@@ -366,6 +443,8 @@ document.addEventListener('click', e => {
     case 'sheet-play': { const s = curSolo(); if (audio.paused) { if (s) audio.currentTime = s.start; audio.play().catch(() => {}); } else audio.pause(); break; }
     case 'note': SH.sel = +d.ni; if (sc) playTone(sc.notes[SH.sel].m); drawSheet(); break;
     case 'bpm': changeBpm(sc.bpm + +d.d); break;
+    case 'tap': tapTempo(); break;
+    case 'swing': if (sc) { if (sc.edited && !confirm('Changer le rythme refait la partition et efface tes corrections. Continuer ?')) break; sc.swing = !sc.swing; requantize(sc); SH.sel = null; saveSoon(); $('#sheet').innerHTML = sheetHTML(curSolo()); drawSheet(); updateSheetPlay(); } break;
     case 'bpm-mul': changeBpm(sc.bpm * +d.f); break;
     case 'acc': if (sc) { sc.flats = !sc.flats; saveSoon(); $('#sheet').innerHTML = sheetHTML(curSolo()); drawSheet(); updateSheetPlay(); } break;
     case 'zoom-score': SH.bars = SH.bars === 1 ? 2 : SH.bars === 2 ? 3 : 1; $('#sheet').innerHTML = sheetHTML(curSolo()); drawSheet(); updateSheetPlay(); break;
@@ -374,11 +453,11 @@ document.addEventListener('click', e => {
     case 'exp-xml': if (sc) exportXml(); break;
     case 'n-pitch': edit((s, n) => { n.m = clampN(n.m + +d.d, 36, 100); playTone(n.m); }); break;
     case 'n-len': edit((s, n, pv, nx) => {
-      const l = Math.max(1, n.l + +d.d);
+      const u = s.swing ? 2 : 1, l = Math.max(u, n.l + +d.d * u);
       if (nx && n.p + l > nx.p) { toast('Pas de place : la note suivante est trop proche'); return false; }
       n.l = l; }); break;
     case 'n-move': edit((s, n, pv, nx) => {
-      const p = n.p + +d.d;
+      const p = n.p + +d.d * (s.swing ? 2 : 1);
       if (p < 0 || (pv && p < pv.p + pv.l) || (nx && p + n.l > nx.p)) { toast('Pas de place pour décaler'); return false; }
       n.p = p; }); break;
     case 'n-dup': edit((s, n, pv, nx) => {
