@@ -16,24 +16,95 @@ function spell(m, flats) {
   return { dn: oct * 7 + t[0], acc: t[1], step: t[0], oct };
 }
 
-/* ---------- 1. Analyse : hauteur toutes les ~20 ms (YIN) puis découpage en notes ---------- */
-async function analyzeSolo(song, solo, onProgress) {
-  const blob = await idb('audio', 'readonly', s => s.get(song.id));
-  const AC = window.AudioContext || window.webkitAudioContext;
-  let ctx; try { ctx = new AC({ sampleRate: 22050 }); } catch { ctx = new AC(); }
-  let buf;
-  try { buf = await ctx.decodeAudioData(await blob.arrayBuffer()); } finally { try { ctx.close(); } catch {} }
-  const sr = buf.sampleRate, i0 = Math.floor(solo.start * sr), i1 = Math.min(buf.length, Math.ceil(solo.end * sr));
-  const n = i1 - i0, x = new Float32Array(n);
-  for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) x[i] += d[i0 + i] / buf.numberOfChannels; }
+/* ---------- 0. Tessiture des instruments (hauteurs sonores, numéros MIDI : do4 = 60) ---------- */
+const NAMES_SHARP = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+const noteLabel = m => NAMES_SHARP[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1);
+const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+const RANGES = {
+  flute: { label: 'Flûte', span: 'C4–C7', lo: 60, hi: 96, prog: 73 },
+  soprano: { label: 'Sax soprano', span: 'G♭3–E6', lo: 54, hi: 88, prog: 64 },
+  alto: { label: 'Sax alto', span: 'D♭3–A♭5', lo: 49, hi: 80, prog: 65 },
+  tenor: { label: 'Sax ténor', span: 'A♭2–E♭5', lo: 44, hi: 75, prog: 66 },
+  baryton: { label: 'Sax baryton', span: 'D♭2–A♭4', lo: 37, hi: 68, prog: 67 },
+  sax: { label: 'Saxophone (tous)', span: 'D♭2–E6', lo: 37, hi: 88, prog: 65 },
+  trompette: { label: 'Trompette', span: 'F♯3–C6', lo: 54, hi: 84, prog: 56 },
+  piano: { label: 'Piano (mélodie)', span: 'C3–C7', lo: 48, hi: 96, prog: 0 },
+  general: { label: 'Générale', span: 'C2–E7', lo: 36, hi: 100, prog: 73 },
+};
+function rangeKeyFor(instr) {
+  const t = norm(instr);
+  if (!t) return 'general';
+  if (/flut/.test(t)) return 'flute';
+  if (/sopran/.test(t)) return 'soprano';
+  if (/alto/.test(t)) return 'alto';
+  if (/tenor/.test(t)) return 'tenor';
+  if (/bar[iy]ton|baritone|bari/.test(t)) return 'baryton';
+  if (/sax/.test(t)) return 'sax';
+  if (/trompet|trumpet/.test(t)) return 'trompette';
+  if (/piano|rhodes|clavier|keys/.test(t)) return 'piano';
+  return 'general';
+}
+/* Plage utilisée pour un solo : réglage manuel, instrument choisi, ou déduite du champ « instrument ». */
+function resolveRange(solo) {
+  const r = solo && solo.range;
+  if (r && r.key === 'manual') {
+    const lo = clampN(Math.round(r.lo), 21, 107), hi = clampN(Math.round(r.hi), lo + 5, 108);
+    return { key: 'manual', label: 'Manuelle', span: noteLabel(lo) + '–' + noteLabel(hi), lo, hi, prog: 73 };
+  }
+  const key = r && RANGES[r.key] ? r.key : rangeKeyFor(solo && solo.instrument);
+  return { key, ...RANGES[key], auto: !(r && RANGES[r.key]) };
+}
 
-  const W = 1024, hop = Math.round(sr * 0.02), tauMax = Math.floor(sr / 100), tauMin = Math.max(2, Math.floor(sr / 2100));
+/* ---------- 1. Analyse : hauteur toutes les ~20 ms (YIN, limité à la tessiture) puis découpage en notes ---------- */
+const ANA = { minDur: 0.07, mergeGap: 0.06, thr: 0.15, thrFallback: 0.25, hopS: 0.02, dip: 0.5 };   // dip : un creux d'énergie sous 50 % sépare deux attaques
+
+function medianFilter(pf, k) {
+  const out = new Array(pf.length).fill(null), buf = [];
+  for (let i = 0; i < pf.length; i++) {
+    if (pf[i] === null) continue;
+    buf.length = 0;
+    for (let j = Math.max(0, i - k); j <= Math.min(pf.length - 1, i + k); j++) if (pf[j] !== null) buf.push(pf[j]);
+    buf.sort((a, b) => a - b);
+    out[i] = buf.length >= 3 ? buf[buf.length >> 1] : pf[i];
+  }
+  return out;
+}
+/* Écart moyen à la hauteur « juste » (enregistrement accordé à 442 Hz, bande un peu rapide…), en demi-tons. */
+function estimateTuning(pf) {
+  let re = 0, im = 0, c = 0;
+  for (const p of pf) if (p !== null) { const a = 2 * Math.PI * (p - Math.round(p)); re += Math.cos(a); im += Math.sin(a); c++; }
+  if (c < 20 || Math.hypot(re, im) / c < 0.35) return 0;
+  const t = Math.atan2(im, re) / (2 * Math.PI);
+  return Math.abs(t) <= 0.35 ? t : 0;
+}
+/* Erreurs d'octave : une note courte à une octave de ses voisines, qui se ressemblent, est ramenée dans leur voisinage. */
+function fixOctaves(notes, range) {
+  const near = (a, b) => b.t0 - a.t1 < 0.25;
+  for (let i = 0; i < notes.length; i++) {
+    const n = notes[i], a = notes[i - 1] && near(notes[i - 1], n) ? notes[i - 1] : null, b = notes[i + 1] && near(n, notes[i + 1]) ? notes[i + 1] : null;
+    let ref = null;
+    if (a && b && Math.abs(a.m - b.m) <= 7) ref = (a.m + b.m) / 2;
+    else if ((a || b) && n.t1 - n.t0 < 0.12 && !(a && b)) ref = (a || b).m;
+    if (ref === null || Math.abs(n.m - ref) < 9) continue;
+    for (const c of [n.m - 12, n.m + 12]) {
+      if (c >= range.lo && c <= range.hi && Math.abs(c - ref) < Math.abs(n.m - ref) - 4) { n.m = c; break; }
+    }
+  }
+  return notes;
+}
+
+/* Cœur de l'analyse : x = signal mono (Float32Array) à la fréquence sr. Renvoie [{t0, t1, m}]. */
+async function detectNotes(x, sr, range, onProgress) {
+  const n = x.length;
+  const tauMin = Math.max(2, Math.floor(sr / hz(range.hi + 1))), tauMax = Math.min(Math.ceil(sr / hz(range.lo - 1)), Math.floor(n / 4));
+  const W = Math.max(1024, Math.ceil(tauMax * 2.5)), hop = Math.round(sr * ANA.hopS);
   const nF = Math.max(0, Math.floor((n - W - tauMax) / hop));
+  if (nF < 3 || tauMax <= tauMin + 2) return [];
   const rms = new Float32Array(nF);
   for (let f = 0; f < nF; f++) { let s = 0; const o = f * hop; for (let j = 0; j < W; j += 2) s += x[o + j] * x[o + j]; rms[f] = Math.sqrt(s / (W / 2)); }
   const ref = [...rms].sort((a, b) => a - b)[Math.floor(nF * 0.9)] || 0, gate = ref * 0.12;
 
-  const d = new Float32Array(tauMax + 1), c = new Float32Array(tauMax + 1), midis = new Array(nF).fill(null);
+  const d = new Float32Array(tauMax + 2), c = new Float32Array(tauMax + 2), pf = new Array(nF).fill(null);
   for (let f = 0; f < nF; f++) {
     if (f % 30 === 0) { onProgress && onProgress(f / nF); await new Promise(r => setTimeout(r, 0)); }
     if (rms[f] < gate) continue;
@@ -41,39 +112,90 @@ async function analyzeSolo(song, solo, onProgress) {
     for (let tau = 1; tau <= tauMax; tau++) { let s = 0; for (let j = 0; j < W; j++) { const v = x[o + j] - x[o + j + tau]; s += v * v; } d[tau] = s; }
     let run = 0; c[0] = 1;
     for (let tau = 1; tau <= tauMax; tau++) { run += d[tau]; c[tau] = run ? d[tau] * tau / run : 1; }
-    for (let tau = tauMin; tau < tauMax; tau++) {
-      if (c[tau] < 0.15) {
-        while (tau + 1 < tauMax && c[tau + 1] < c[tau]) tau++;
-        const a = c[tau - 1], b = c[tau], g = c[tau + 1], den = a - 2 * b + g;
-        const t2 = den ? tau + (a - g) / (2 * den) : tau;
-        const m = Math.round(69 + 12 * Math.log2(sr / t2 / 440));
-        if (m >= 36 && m <= 100) midis[f] = m;
-        break;
-      }
+    let found = -1;
+    for (let tau = tauMin; tau < tauMax; tau++) {            // premier creux sous le seuil, dans la tessiture seulement
+      if (c[tau] < ANA.thr) { while (tau + 1 < tauMax && c[tau + 1] < c[tau]) tau++; found = tau; break; }
     }
+    if (found < 0) {                                         // sinon le meilleur creux, s'il est assez net
+      let best = tauMin; for (let tau = tauMin; tau < tauMax; tau++) if (c[tau] < c[best]) best = tau;
+      if (c[best] < ANA.thrFallback && best > tauMin && best < tauMax - 1) found = best;
+    }
+    if (found < 0 || found >= tauMax) continue;
+    const a = c[found - 1], b = c[found], g = c[found + 1], den = a - 2 * b + g;
+    const t2 = den ? found + (a - g) / (2 * den) : found;
+    const p = 69 + 12 * Math.log2(sr / t2 / 440);
+    if (p >= range.lo - 0.7 && p <= range.hi + 0.7) pf[f] = p;   // hors tessiture : rejeté
   }
-  // lissage : un trou ou un parasite isolé de 1 à 2 images disparaît
-  for (let i = 1; i < nF - 1; i++) { if (midis[i] !== midis[i - 1] && midis[i - 1] === midis[i + 1]) midis[i] = midis[i - 1]; }
-  for (let i = 1; i < nF - 2; i++) { if (midis[i] === null && midis[i + 1] === null && midis[i - 1] !== null && midis[i - 1] === midis[i + 2]) midis[i] = midis[i + 1] = midis[i - 1]; }
-  const tOf = f => (f * hop + W / 2) / sr, step = hop / sr, raw = [];
-  let cur = null;
-  const close = f => { if (cur) { cur.t1 = tOf(f - 1) + step / 2; if (cur.t1 - cur.t0 >= 0.06) raw.push(cur); cur = null; } };
+  // lissage par médiane (supprime les images isolées), puis accord de l'enregistrement
+  const pm = medianFilter(pf, 2), tune = estimateTuning(pm);
+  // découpage en notes : hystérésis de 0,7 demi-ton (vibrato), trous de 1 à 2 images tolérés
+  const tOf = f => (f * hop + W / 2) / sr, step = hop / sr, notes = [];
+  let cur = null, gap = 0;
+  // creux d'énergie à l'intérieur d'une note : deux attaques de même hauteur (articulation) → deux notes
+  const splitAtDips = (a, b) => {
+    if (b - a < 7) return [[a, b]];
+    const L = new Float32Array(b - a + 1), R = new Float32Array(b - a + 1);
+    for (let k = a, m = 0; k <= b; k++) { m = Math.max(m, rms[k]); L[k - a] = m; }
+    for (let k = b, m = 0; k >= a; k--) { m = Math.max(m, rms[k]); R[k - a] = m; }
+    let best = -1, bestV = 1;
+    for (let k = a + 3; k <= b - 3; k++) {
+      if (rms[k] > rms[k - 1] || rms[k] > rms[k + 1]) continue;
+      const v = rms[k] / Math.min(L[k - a], R[k - a]);
+      if (v < ANA.dip && v < bestV) { best = k; bestV = v; }
+    }
+    return best < 0 ? [[a, b]] : [...splitAtDips(a, best - 1), ...splitAtDips(best + 1, b)];
+  };
+  const close = () => {
+    if (!cur) return;
+    for (const [a, b] of splitAtDips(cur.first, cur.last)) {
+      const t0 = tOf(a) - step / 2, t1 = tOf(b) + step / 2;
+      if (t1 - t0 >= ANA.minDur) notes.push({ t0, t1, m: cur.m, a, b });
+    }
+    cur = null;
+  };
   for (let f = 0; f < nF; f++) {
-    const m = midis[f];
-    if (m === null) close(f);
-    else if (cur && cur.m === m) { /* même note */ }
-    else { close(f); cur = { t0: tOf(f) - step / 2, t1: 0, m }; }
+    if (pm[f] === null) { if (cur && ++gap > 2) close(); continue; }
+    const p = pm[f] - tune;
+    if (cur && Math.abs(p - cur.m) < 0.7) { cur.last = f; gap = 0; }
+    else { close(); cur = { first: f, last: f, m: Math.round(p) }; gap = 0; }
   }
-  close(nF);
-  // fusionne deux morceaux de même hauteur séparés par moins de 40 ms
+  close();
+  fixOctaves(notes, range);
+  const inRange = notes.filter(nt => nt.m >= range.lo && nt.m <= range.hi);
+  // fusion des notes répétées trop proches (trou de détection sans vrai creux d'énergie), puis durée minimale
+  const dipBetween = (A, B) => {
+    const lo = Math.max(A.a, A.b - 5), hi = Math.min(B.b, B.a + 5);
+    let pl = 0, pr = 0, mn = Infinity;
+    for (let k = lo; k <= A.b; k++) pl = Math.max(pl, rms[k]);
+    for (let k = B.a; k <= hi; k++) pr = Math.max(pr, rms[k]);
+    for (let k = Math.max(0, A.b - 1); k <= Math.min(nF - 1, B.a + 1); k++) mn = Math.min(mn, rms[k]);
+    return mn < ANA.dip * Math.min(pl, pr);
+  };
   const merged = [];
-  for (const nt of raw) { const l = merged[merged.length - 1]; if (l && l.m === nt.m && nt.t0 - l.t1 < 0.04) l.t1 = nt.t1; else merged.push({ ...nt }); }
-  return merged.map(r => ({ t0: Math.max(0, +r.t0.toFixed(3)), t1: +r.t1.toFixed(3), m: r.m }));
+  for (const nt of inRange) {
+    const l = merged[merged.length - 1];
+    if (l && l.m === nt.m && nt.t0 - l.t1 < ANA.mergeGap && !dipBetween(l, nt)) { l.t1 = nt.t1; l.b = nt.b; } else merged.push({ ...nt });
+  }
+  return merged.filter(r => r.t1 - r.t0 >= ANA.minDur).map(r => ({ t0: Math.max(0, +r.t0.toFixed(3)), t1: +r.t1.toFixed(3), m: r.m }));
 }
 
-/* ---------- 2. Tempo et quantification (grille de doubles-croches) ---------- */
-function phaseFor(raw, bpm) {
-  const P = 15 / bpm; let re = 0, im = 0;   // P = une double-croche
+async function analyzeSolo(song, solo, onProgress) {
+  const range = resolveRange(solo);
+  const blob = await idb('audio', 'readonly', s => s.get(song.id));
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const want = range.hi >= 92 ? 44100 : 22050;     // les aigus de la flûte demandent une meilleure résolution
+  let ctx; try { ctx = new AC({ sampleRate: want }); } catch { ctx = new AC(); }
+  let buf;
+  try { buf = await ctx.decodeAudioData(await blob.arrayBuffer()); } finally { try { ctx.close(); } catch {} }
+  const sr = buf.sampleRate, i0 = Math.floor(solo.start * sr), i1 = Math.min(buf.length, Math.ceil(solo.end * sr));
+  const n = i1 - i0, x = new Float32Array(n);
+  for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) x[i] += d[i0 + i] / buf.numberOfChannels; }
+  return detectNotes(x, sr, range, onProgress);
+}
+
+/* ---------- 2. Tempo et quantification : doubles-croches (droit) ou croches swinguées (triolets) ---------- */
+function phaseFor(raw, bpm, P = 15 / bpm) {       // P = durée d'un pas de la grille (par défaut une double-croche)
+  let re = 0, im = 0;
   for (const n of raw) { const a = 2 * Math.PI * n.t0 / P; re += Math.cos(a); im += Math.sin(a); }
   let lead = (Math.atan2(im, re) / (2 * Math.PI)) * P;
   const first = raw.length ? raw[0].t0 : 0;
@@ -90,18 +212,52 @@ function estimateBpm(raw) {
     const r = Math.hypot(re, im) / raw.length; res.push([bpm, r]); if (r > best) best = r;
   }
   const hit = res.find(([, r]) => r >= best * 0.93);
-  return Math.round(hit[0]);
+  let bpm = hit[0];
+  // Même grille, deux lectures : des doubles-croches à 112,5 ou des triolets à 150. On garde celle dont les attaques se regroupent
+  // le mieux par temps (3 positions par temps en swing, 4 en jeu droit).
+  const P = 15 / bpm, lead = phaseFor(raw, bpm), h3 = [0, 0, 0], h4 = [0, 0, 0, 0];
+  for (const n of raw) { const k = Math.round((n.t0 - lead) / P); h3[((k % 3) + 3) % 3]++; h4[((k % 4) + 4) % 4]++; }
+  const conc = h => (h.reduce((a, v) => a + v * v, 0) / (raw.length * raw.length) - 1 / h.length) / (1 - 1 / h.length);
+  if (conc(h3) > conc(h4) + 0.06 && bpm * 4 / 3 <= 300) bpm = bpm * 4 / 3;
+  return Math.round(bpm);
 }
-function quantize(raw, bpm, lead) {
-  const g = 60 / bpm / 4, notes = []; let end = 0;
+/* Triolets → positions écrites : 0, 1/3, 2/3 de temps deviennent 0, 1, 2 doubles-croches (la croche de contretemps swinguée s'écrit
+   comme une croche droite, usage du jazz). Un temps vaut toujours 4 doubles-croches. */
+const swingPos = k => Math.floor(k / 3) * 4 + ((k % 3) + 3) % 3;
+const gridErr = (raw, lead, P) => raw.reduce((s, n) => { const u = (n.t0 - lead) / P; return s + Math.abs(u - Math.round(u)); }, 0) / Math.max(1, raw.length) * P;
+function quantize(raw, bpm, lead, swing) {
+  const g = (swing ? 20 : 15) / bpm, pos = swing ? swingPos : k => k, notes = []; let end = 0;
   for (const n of raw) {
-    let p = Math.round((n.t0 - lead) / g); const e = Math.round((n.t1 - lead) / g);
+    let p = pos(Math.round((n.t0 - lead) / g)); const e = pos(Math.round((n.t1 - lead) / g));
     if (p < end) p = end;
     const l = Math.max(1, e - p); notes.push({ p, l, m: n.m }); end = p + l;
   }
   return notes;
 }
-function requantize(sc) { sc.lead = phaseFor(sc.raw, sc.bpm); sc.notes = quantize(sc.raw, sc.bpm, sc.lead); sc.edited = false; }
+/* Tempo tapé : intervalles entre appuis (ms) → battements par minute, en ignorant les appuis ratés. */
+function bpmFromTaps(ts) {
+  if (ts.length < 3) return null;
+  const iv = []; for (let i = 1; i < ts.length; i++) iv.push(ts[i] - ts[i - 1]);
+  const med = [...iv].sort((a, b) => a - b)[iv.length >> 1], good = iv.filter(v => Math.abs(v - med) < med * 0.25);
+  if (good.length < 2) return null;
+  return Math.round(60000 / (good.reduce((a, b) => a + b, 0) / good.length) * 2) / 2;
+}
+/* Position d'une note écrite (en doubles-croches) en temps réels : en swing, la 2e croche tombe aux 2/3 du temps. */
+const SW_FRAC = [0, 1 / 3, 2 / 3, 5 / 6];
+const beatPos = (p, swing) => swing ? Math.floor(p / 4) + SW_FRAC[p % 4] : p / 4;
+const fmtBpm = v => Number.isInteger(v) ? String(v) : v.toFixed(1);
+const FEEL_NEXT = { auto: 'straight', straight: 'swing', swing: 'auto' };
+const feelLabel = sc => { const f = sc.feel || 'auto'; return f === 'auto' ? `Auto (${sc.swing ? 'swing' : 'droit'})` : f === 'swing' ? 'Swing' : 'Droit'; };
+
+/* sc.feel : 'auto' | 'straight' | 'swing'. En auto, on garde la grille qui colle le mieux aux attaques. */
+function requantize(sc) {
+  const want = sc.feel || 'auto';
+  const lead16 = phaseFor(sc.raw, sc.bpm, 15 / sc.bpm), leadT = phaseFor(sc.raw, sc.bpm, 20 / sc.bpm);
+  let swing = want === 'swing';
+  if (want === 'auto' && sc.raw.length >= 8) swing = gridErr(sc.raw, leadT, 20 / sc.bpm) < gridErr(sc.raw, lead16, 15 / sc.bpm) * 0.85;
+  sc.swing = swing; sc.lead = swing ? leadT : lead16;
+  sc.notes = quantize(sc.raw, sc.bpm, sc.lead, swing); sc.edited = false;
+}
 
 /* ---------- 3. Événements : coupe aux barres de mesure et aux durées écrivables ---------- */
 function buildEvents(notes) {
@@ -162,6 +318,7 @@ function renderScore(sc, W) {
     for (let i = 0; i < 5; i++) out.push(`<line x1="6" x2="${xEnd}" y1="${top + i * SP}" y2="${top + i * SP}" stroke="${INK}" stroke-width="1"/>`);
     out.push(`<line x1="6" x2="6" y1="${top}" y2="${top + 4 * SP}" stroke="${INK}" stroke-width="1.4"/>`);
     out.push(clefPath(10, top));
+    if (li === 0) out.push(`<text x="${6 + CLEF_W + TS_W}" y="${top - 44}" font-size="12" font-family="system-ui,sans-serif" fill="${INK}">♩ = ${fmtBpm(sc.bpm)}${sc.swing ? '   Swing' : ''}</text>`);
     if (li === 0) out.push(`<text x="${6 + CLEF_W + 1}" y="${top + 2 * SP - 1}" font-size="17" font-weight="700" font-family="system-ui,sans-serif" fill="${INK}">4</text><text x="${6 + CLEF_W + 1}" y="${top + 4 * SP - 1}" font-size="17" font-weight="700" font-family="system-ui,sans-serif" fill="${INK}">4</text>`);
     for (let k = li * b; k < kEnd; k++) {
       out.push(`<line x1="${mx0(k) + measW}" x2="${mx0(k) + measW}" y1="${top}" y2="${top + 4 * SP}" stroke="${INK}" stroke-width="${k === nM - 1 ? 2.4 : 1}"/>`);
@@ -245,20 +402,38 @@ function playTone(m) {
 }
 const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
 
+function rangeControls(solo) {
+  const key = solo.range && solo.range.key ? solo.range.key : 'auto', auto = resolveRange({ instrument: solo.instrument }), cur = resolveRange(solo);
+  const opt = (v, t) => `<option value="${v}"${v === key ? ' selected' : ''}>${esc(t)}</option>`;
+  let h = `<span class="lbl">Tessiture</span><select id="rangeSel" aria-label="Tessiture de l'instrument">${opt('auto', `Auto : ${auto.label} (${auto.span})`)}` +
+    Object.entries(RANGES).map(([k, r]) => opt(k, `${r.label} (${r.span})`)).join('') + opt('manual', 'Manuelle…') + `</select>`;
+  if (key === 'manual') {
+    const notes = sel => { let o = ''; for (let m = 21; m <= 108; m++) o += `<option value="${m}"${m === sel ? ' selected' : ''}>${noteLabel(m)}</option>`; return o; };
+    h += `<select id="rangeLo" aria-label="Note la plus grave">${notes(cur.lo)}</select><span class="lbl">à</span><select id="rangeHi" aria-label="Note la plus aiguë">${notes(cur.hi)}</select>`;
+  }
+  return h;
+}
 function sheetHTML(solo) {
   const sc = solo.score;
   const title = esc(solo.name) + (solo.instrument ? ' · ' + esc(solo.instrument) : '');
   return `<div class="sheet-top"><button class="icon-btn" data-act="sheet-close" aria-label="Fermer">←</button><b>${title}</b>
       <button id="sheetPlay" data-act="sheet-play">▶ Solo</button></div>
     <div class="sheet-ctl">
-      <span class="lbl">Tempo</span><button data-act="bpm" data-d="-1">−</button><b id="bpmLbl">${sc ? Math.round(sc.bpm) : '…'}</b><button data-act="bpm" data-d="1">+</button>
+      <span class="lbl">Tempo</span><button data-act="bpm" data-d="-1">−</button>
+      <input id="bpmIn" class="bpm-in" type="number" inputmode="decimal" min="30" max="300" step="0.5" value="${sc ? fmtBpm(sc.bpm) : ''}" aria-label="Tempo en battements par minute"><button data-act="bpm" data-d="1">+</button>
       <button data-act="bpm-mul" data-f="0.5">÷2</button><button data-act="bpm-mul" data-f="2">×2</button>
-      <button data-act="acc">${sc && sc.flats ? '♭' : '♯'}</button><button data-act="zoom-score" aria-label="Mesures par ligne">${SH.bars} mes.</button>
     </div>
+    <div class="sheet-ctl">
+      <button id="tapBtn" class="wide" data-act="tap">Taper le tempo</button>
+      <button class="wide" data-act="feel">Rythme : ${sc ? feelLabel(sc) : '…'}</button>
+    </div>
+    <div class="sheet-ctl">${rangeControls(solo)}
+      <button data-act="acc" aria-label="Dièses ou bémols">${sc && sc.flats ? '♭' : '♯'}</button><button data-act="zoom-score" aria-label="Mesures par ligne">${SH.bars} mes.</button></div>
     <div id="scoreWrap">${sc ? '' : '<p class="hint" id="scMsg">Analyse du solo…</p>'}</div>
     <div id="noteBar"></div>
     <div class="sheet-exp"><button data-act="reanalyze">Réanalyser</button><button data-act="exp-midi">MIDI</button><button data-act="exp-xml">MusicXML</button></div>
-    <p class="hint">Brouillon automatique : touche une note pour l’écouter et la corriger. Le tempo se règle à l’oreille (÷2 / ×2 si le rythme est doublé ou divisé).</p>`;
+    <p class="hint">Brouillon automatique${sc && sc.range ? ` (notes cherchées entre ${noteLabel(sc.range.lo)} et ${noteLabel(sc.range.hi)})` : ''} : touche une note pour l’écouter et la corriger.
+      Le tempo se règle en le tapant au rythme du morceau, ou en le saisissant (÷2 / ×2 si le rythme est doublé ou divisé). « Rythme » : droit = doubles-croches, swing = croches swinguées (écrites droites, comme en jazz).</p>`;
 }
 function drawSheet() {
   const sc = sc$(), wrap = $('#scoreWrap'); if (!sc || !wrap) return;
@@ -281,15 +456,17 @@ async function runAnalysis() {
   const wrap = $('#scoreWrap'); if (wrap) wrap.innerHTML = '<p class="hint" id="scMsg">Analyse du solo… 0 %</p>';
   try {
     const raw = await analyzeSolo(song, solo, p => { const m = $('#scMsg'); if (m) m.textContent = `Analyse du solo… ${Math.round(p * 100)} %`; });
-    if (!raw.length) { toast('Aucune note détectée dans ce solo'); }
-    const bpm = estimateBpm(raw);
-    const old = solo.score;
-    solo.score = { bpm, lead: 0, raw, notes: [], edited: false, flats: old ? old.flats : false };
+    const range = resolveRange(solo), old = solo.score;
+    if (!raw.length) toast(`Aucune note détectée entre ${noteLabel(range.lo)} et ${noteLabel(range.hi)} : vérifie l’instrument ou la tessiture`);
+    const keep = old && old.bpmSet;                      // un tempo tapé ou saisi à la main est conservé à la réanalyse
+    solo.score = { bpm: keep ? old.bpm : estimateBpm(raw), bpmSet: !!keep, lead: 0, raw, notes: [], edited: false,
+      flats: old ? old.flats : false, feel: old && old.feel || 'auto', range: { key: range.key, lo: range.lo, hi: range.hi } };
     requantize(solo.score); saveSoon();
   } catch (e) { console.error(e); toast('Analyse impossible pour ce fichier'); }
   SH.busy = false;
-  if (!$('#sheet').hidden) { $('#sheet').innerHTML = sheetHTML(solo); drawSheet(); updateSheetPlay(); }
+  if (!$('#sheet').hidden) redrawSheet();
 }
+function redrawSheet() { const solo = curSolo(); if (!solo) return; $('#sheet').innerHTML = sheetHTML(solo); drawSheet(); updateSheetPlay(); }
 function openSheet() {
   const solo = curSolo(); if (!solo) return;
   SH.sel = null; const sh = $('#sheet'); sh.hidden = false; document.body.style.overflow = 'hidden';
@@ -304,11 +481,37 @@ function edit(fn) {
   if (fn(sc, nt, sc.notes[SH.sel - 1], sc.notes[SH.sel + 1]) !== false) { sc.edited = true; saveSoon(); }
   drawSheet();
 }
-function changeBpm(next) {
+const sureRedo = (sc, what) => !sc.edited || confirm(`${what} refait la partition et efface tes corrections. Continuer ?`);
+function changeBpm(next, fromTap) {
   const sc = sc$(); if (!sc) return;
   next = clampN(next, 30, 300);
-  if (sc.edited && !confirm('Changer le tempo refait la partition et efface tes corrections. Continuer ?')) return;
-  sc.bpm = next; requantize(sc); SH.sel = null; saveSoon(); $('#bpmLbl').textContent = Math.round(sc.bpm); drawSheet();
+  if (!(fromTap && TAP.ok) && !sureRedo(sc, 'Changer le tempo')) { const i = $('#bpmIn'); if (i) i.value = fmtBpm(sc.bpm); return; }
+  if (fromTap) TAP.ok = true;
+  sc.bpm = next; sc.bpmSet = true; requantize(sc); SH.sel = null; saveSoon();
+  const i = $('#bpmIn'); if (i && document.activeElement !== i) i.value = fmtBpm(sc.bpm);
+  drawSheet();
+  const f = $('[data-act=feel]'); if (f) f.textContent = 'Rythme : ' + feelLabel(sc);
+}
+/* Tempo tapé : appuyer en rythme sur le bouton ; la valeur se met à jour dès le 3e appui, une pause de 2,5 s recommence. */
+const TAP = { t: [], ok: false };
+function tapTempo() {
+  const sc = sc$(); if (!sc) return;
+  const now = performance.now();
+  if (TAP.t.length && now - TAP.t[TAP.t.length - 1] > 2500) { TAP.t = []; TAP.ok = false; }
+  TAP.t.push(now); if (TAP.t.length > 12) TAP.t.shift();
+  const bpm = bpmFromTaps(TAP.t), btn = $('#tapBtn');
+  if (btn) btn.textContent = bpm ? `Taper… ${fmtBpm(bpm)}` : `Taper… (${TAP.t.length})`;
+  if (bpm && bpm >= 30 && bpm <= 300) changeBpm(bpm, true);
+}
+/* Tessiture : tout changement relance l'analyse (la plage borne la recherche de la hauteur). */
+function setRange(patch) {
+  const solo = curSolo(), sc = sc$(); if (!solo) return;
+  if (sc && !sureRedo(sc, 'Changer la tessiture')) { redrawSheet(); return; }
+  const cur = resolveRange(solo);
+  const next = { ...(solo.range || {}), ...patch };
+  if (next.key === 'manual') { next.lo = next.lo ?? cur.lo; next.hi = next.hi ?? cur.hi; if (next.hi < next.lo + 5) { toast('La plage doit couvrir au moins une quarte'); redrawSheet(); return; } }
+  solo.range = next.key === 'auto' ? undefined : next;
+  saveSoon(); runAnalysis();
 }
 
 /* ---------- 6. Export ---------- */
@@ -318,14 +521,15 @@ function saveBlob(name, blob) {
 }
 const fileBase = () => (S.song.title + '-' + (curSolo().name || 'solo')).replace(/[^\wÀ-ſ-]+/g, '_');
 function exportMidi() {
-  const sc = sc$(), bytes = [], PPQ = 480, U = PPQ / 4;
+  const sc = sc$(), bytes = [], PPQ = 480, at = p => Math.round(beatPos(p, sc.swing) * PPQ);   // en swing, le fichier MIDI swingue aussi
   const vlq = v => { const o = [v & 0x7f]; while ((v >>= 7)) o.unshift((v & 0x7f) | 0x80); return o; };
-  const us = Math.round(60e6 / sc.bpm), tr = [0, 0xff, 0x51, 0x03, (us >> 16) & 255, (us >> 8) & 255, us & 255, 0, 0xc0, 73];
+  const us = Math.round(60e6 / sc.bpm), tr = [0, 0xff, 0x51, 0x03, (us >> 16) & 255, (us >> 8) & 255, us & 255, 0, 0xc0, resolveRange(curSolo()).prog];
   let tick = 0;
   for (const nt of sc.notes) {
-    tr.push(...vlq(Math.max(0, nt.p * U - tick)), 0x90, nt.m, 90);
-    tr.push(...vlq(Math.round(nt.l * U * 0.97)), 0x80, nt.m, 0);
-    tick = nt.p * U + Math.round(nt.l * U * 0.97);
+    const on = at(nt.p), len = Math.max(1, Math.round((at(nt.p + nt.l) - on) * 0.97));
+    tr.push(...vlq(Math.max(0, on - tick)), 0x90, nt.m, 90);
+    tr.push(...vlq(len), 0x80, nt.m, 0);
+    tick = on + len;
   }
   tr.push(0, 0xff, 0x2f, 0);
   const u32 = v => [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255];
@@ -342,7 +546,7 @@ function exportXml() {
     if (mi !== k) {
       if (k >= 0) xml += '</measure>';
       k = mi; xml += `<measure number="${mi + 1}">`;
-      if (mi === 0) xml += `<attributes><divisions>4</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes><direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${Math.round(sc.bpm)}</per-minute></metronome></direction-type><sound tempo="${Math.round(sc.bpm)}"/></direction>`;
+      if (mi === 0) xml += `<attributes><divisions>4</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes><direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${Math.round(sc.bpm)}</per-minute></metronome></direction-type><sound tempo="${Math.round(sc.bpm)}"/></direction>${sc.swing ? '<direction placement="above"><direction-type><words font-style="italic">Swing</words></direction-type></direction>' : ''}`;
     }
     const [type, dot] = T[e.l];
     if (e.m === null) { xml += `<note><rest/><duration>${e.l}</duration><type>${type}</type>${dot ? '<dot/>' : ''}</note>`; prevTie = false; return; }
@@ -366,13 +570,15 @@ document.addEventListener('click', e => {
     case 'sheet-play': { const s = curSolo(); if (audio.paused) { if (s) audio.currentTime = s.start; audio.play().catch(() => {}); } else audio.pause(); break; }
     case 'note': SH.sel = +d.ni; if (sc) playTone(sc.notes[SH.sel].m); drawSheet(); break;
     case 'bpm': changeBpm(sc.bpm + +d.d); break;
+    case 'tap': tapTempo(); break;
+    case 'feel': if (sc && sureRedo(sc, 'Changer le rythme')) { sc.feel = FEEL_NEXT[sc.feel || 'auto']; requantize(sc); SH.sel = null; saveSoon(); redrawSheet(); } break;
     case 'bpm-mul': changeBpm(sc.bpm * +d.f); break;
-    case 'acc': if (sc) { sc.flats = !sc.flats; saveSoon(); $('#sheet').innerHTML = sheetHTML(curSolo()); drawSheet(); updateSheetPlay(); } break;
-    case 'zoom-score': SH.bars = SH.bars === 1 ? 2 : SH.bars === 2 ? 3 : 1; $('#sheet').innerHTML = sheetHTML(curSolo()); drawSheet(); updateSheetPlay(); break;
+    case 'acc': if (sc) { sc.flats = !sc.flats; saveSoon(); redrawSheet(); } break;
+    case 'zoom-score': SH.bars = SH.bars === 1 ? 2 : SH.bars === 2 ? 3 : 1; redrawSheet(); break;
     case 'reanalyze': if (!sc || !sc.edited || confirm('Réanalyser efface tes corrections. Continuer ?')) runAnalysis(); break;
     case 'exp-midi': if (sc) exportMidi(); break;
     case 'exp-xml': if (sc) exportXml(); break;
-    case 'n-pitch': edit((s, n) => { n.m = clampN(n.m + +d.d, 36, 100); playTone(n.m); }); break;
+    case 'n-pitch': edit((s, n) => { n.m = clampN(n.m + +d.d, 21, 108); playTone(n.m); }); break;
     case 'n-len': edit((s, n, pv, nx) => {
       const l = Math.max(1, n.l + +d.d);
       if (nx && n.p + l > nx.p) { toast('Pas de place : la note suivante est trop proche'); return false; }
@@ -387,4 +593,11 @@ document.addEventListener('click', e => {
       s.notes.splice(SH.sel + 1, 0, { p, l, m: n.m }); SH.sel++; }); break;
     case 'n-del': edit(s => { s.notes.splice(SH.sel, 1); SH.sel = null; }); break;
   }
+});
+document.addEventListener('change', e => {
+  const t = e.target, sc = sc$(); if (!t.id || !curSolo()) return;
+  if (t.id === 'bpmIn') { const v = parseFloat(String(t.value).replace(',', '.')); if (isFinite(v) && sc) changeBpm(v); else if (sc) t.value = fmtBpm(sc.bpm); }
+  else if (t.id === 'rangeSel') setRange({ key: t.value });
+  else if (t.id === 'rangeLo') setRange({ key: 'manual', lo: +t.value });
+  else if (t.id === 'rangeHi') setRange({ key: 'manual', hi: +t.value });
 });

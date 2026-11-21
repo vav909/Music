@@ -26,14 +26,17 @@
   <input type="file" id="jsonInput" accept="application/json,.json" hidden>
   <input type="file" id="fileInput" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac" multiple hidden>
   <datalist id="instrs">
-    <option value="Flûte"><option value="Saxophone"><option value="Trompette">
+    <option value="Flûte"><option value="Saxophone"><option value="Sax soprano"><option value="Sax alto"><option value="Sax ténor"><option value="Sax baryton"><option value="Trompette">
     <option value="Trombone"><option value="Clarinette"><option value="Hautbois">
     <option value="Basson"><option value="Cor"><option value="Piano">
     <option value="Guitare"><option value="Violon"><option value="Voix">
   </datalist>
   <div id="toast" role="status"></div>
   <noscript><p class="fatal">Cette application a besoin de JavaScript.</p></noscript>
+  <input type="file" id="coverInput" accept="image/*" hidden>
   <div id="sheet" hidden></div>
+  <div id="pick" hidden></div>
+  <script src="meta.js"></script>
   <script src="app.js"></script>
   <script src="score.js"></script>
 </body>

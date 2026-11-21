@@ -16,14 +16,20 @@ ralentir sans changer la hauteur. Fichiers statiques sans build : `index.html`, 
 - Priorité : tester d'abord avec un MP3 téléchargé.
 
 ## Déjà dans l'app
-Bibliothèque de morceaux (MP3 importés, stockage local), solos nommés avec instrument, soliste et favori, artiste/album/pochette
-(recherche automatique iTunes, sinon saisie), boucle, tempo 25–150 % sans changer la hauteur, montée progressive (+5 % par passage),
+Bibliothèque de morceaux (MP3 importés, stockage local), solos nommés avec instrument, soliste et favori, titre/artiste/album/pochette
+(étiquettes ID3 du MP3 lues d'abord, sinon nom de fichier nettoyé puis recherche iTunes / MusicBrainz avec choix entre plusieurs candidats, saisie et pochette de la galerie en secours : `meta.js`), boucle, tempo 25–150 % sans changer la hauteur, montée progressive (+5 % par passage),
 pause avec bips entre deux passages, pédale Bluetooth (espace/↓ lecture, ↑ début du solo), export/import JSON des repères (sans audio),
-partition du solo sélectionné (`score.js` : analyse YIN, quantification en doubles-croches, affichage SVG, correction note par note, export MIDI/MusicXML).
+partition du solo sélectionné (`score.js` : analyse YIN limitée à la tessiture de l'instrument du solo (réglable à la main), lissage médian,
+séparation des attaques aux creux d'énergie, rejet des notes hors plage ; quantification en doubles-croches ou croches swinguées (auto / droit / swing) ;
+tempo estimé, tapé ou saisi ; affichage SVG, correction note par note, export MIDI/MusicXML). Hauteurs sonores, sans transposition.
 
 ## À faire ensuite
 Import Drive, import d'une playlist Deezer (titres seulement, puis association aux fichiers), transposition de la partition, partition plus fiable sur piste isolée (serveur),
 détection automatique des solos (serveur), changement de tonalité.
+
+## Tests (Node, sans dépendance)
+`node tests/score.test.js` (tessiture, swing, tempo, sur un signal synthétique `tests/synth.js`), `node tests/meta.test.js` (ID3, noms de fichiers, recherche avec réponses simulées),
+`node tests/compare.js [révision]` (avant/après sur le même signal). Le bac à sable bloque iTunes/MusicBrainz : la recherche réelle reste à vérifier sur un téléphone.
 
 ## Comment modifier l'app et la mettre en ligne
 1. Modifier les fichiers à la racine. Garder l'app sans dépendance ni étape de build.
