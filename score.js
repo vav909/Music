@@ -2,7 +2,7 @@
 /* Partition du solo sélectionné : analyse de la hauteur (YIN), quantification, affichage SVG,
    correction note par note, export MIDI / MusicXML. Aucune dépendance, fonctionne hors ligne. */
 
-const SH = { sel: null, busy: false, bars: 2, open: { range: true, play: true, score: true, diag: false } };
+const SH = { sel: null, busy: false, bars: 2, dock: false, open: { range: true, score: true, diag: false } };
 const ALLOWED = [16, 12, 8, 6, 4, 3, 2, 1];             // durées autorisées, en doubles-croches
 const SP = 9, LINE_H = 140, CLEF_W = 36, TS_W = 16;      // interligne, hauteur d'une ligne, largeurs fixes
 const INK = '#14171c', BLUE = '#1f6feb', MUTED = '#6b7686';
@@ -394,6 +394,11 @@ function diagSummary(solo) {
     <li><span>Tessiture</span><b>${noteFr(r.lo)} – ${noteFr(r.hi)}${r.manual ? ' (manuelle)' : ''}</b></li><li><span>Voix aiguë</span><b>${solo.top ? 'oui' : 'non'}</b></li>
     <li><span>Tempo</span><b>${Math.round(sc.bpm)}</b></li></ul>`;
 }
+/* Pictos : croche (lire la transcription) et portée avec une note sur la ligne de sol (réglages de la partition) */
+const ICON_EIGHTH = '<svg class="ic" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><ellipse cx="8" cy="18" rx="4.3" ry="3.2" transform="rotate(-20 8 18)" fill="currentColor"/><path d="M11.8 16.5V3.5l6.6 3.4c1.6 1.6 1.6 4.2-.4 6.6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>';
+const ICON_STAFF = '<svg class="ic" viewBox="0 0 34 26" width="34" height="26" aria-hidden="true"><g stroke="currentColor" stroke-width="1.3"><line x1="2" y1="5" x2="32" y2="5"/><line x1="2" y1="9" x2="32" y2="9"/><line x1="2" y1="13" x2="32" y2="13"/><line x1="2" y1="17" x2="32" y2="17"/><line x1="2" y1="21" x2="32" y2="21"/></g><ellipse cx="17" cy="17" rx="3.9" ry="2.8" transform="rotate(-20 17 17)" fill="currentColor"/><line x1="20.6" y1="16.2" x2="20.6" y2="4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+const scoreBtn = (stop, label) => (stop ? '⏹' : ICON_EIGHTH) + '<span>' + label + '</span>';
+
 /* Page « Détails du solo » : une seule page, des sections repliables (SH.open mémorise celles qui sont dépliées) */
 function sheetHTML(solo) {
   const sc = solo.score, title = esc(solo.name) + (solo.instrument ? ' · ' + esc(solo.instrument) : '');
@@ -401,28 +406,37 @@ function sheetHTML(solo) {
   const edges = ['start', 'end'].map(w => `<div class="edrow"><span class="lbl">${w === 'start' ? 'Début' : 'Fin'}</span><b data-edge="${w}">${fmt(solo[w], true)}</b>
     <button data-act="nudge" data-w="${w}" data-d="-1">−</button><button data-act="nudge" data-w="${w}" data-d="1">+</button>
     <button class="here" data-act="here" data-w="${w}">⌖ ici</button></div>`).join('');
-  return `<div class="sheet-top"><button class="icon-btn" data-act="sheet-close" aria-label="Fermer">←</button><b>${title}</b>
-      <button id="sheetPlay" data-act="sheet-play">▶ Solo</button></div>
+  return `<div class="sheet-top"><button class="icon-btn" data-act="sheet-close" aria-label="Fermer">←</button><b>${title}</b></div>
     ${sec('range', 'Plage du solo', `<div class="tlbox">${timelineHTML()}${timelineTools()}</div>${edges}
       <div class="edrow2"><button data-act="step" data-step>Pas : ${S.step} s</button></div>
       <p class="hint">Touche la timeline pour te placer ; « ⌖ ici » prend la position de lecture comme début ou fin.</p>`)}
-    ${sec('play', 'Écouter', `<div class="sheet-ctl"><button class="wide" data-act="score-play" id="spBtn">${PL.on && !PL.mix ? '⏹ Arrêter' : '▶ La transcription'}</button><button class="wide" data-act="score-play" data-mix="1" id="spMix">${PL.on && PL.mix ? '⏹ Arrêter' : '▶ Avec le solo'}</button></div>
-      <p class="hint">« ▶ Solo », en haut, joue le solo d’origine. « La transcription » joue la partition écrite ; « Avec le solo » la joue en même temps que l’enregistrement, pour vérifier à l’oreille.</p>`)}
-    ${sec('score', 'Partition', `<div class="sheet-ctl">
-      <span class="lbl">Tempo</span><button data-act="bpm" data-d="-1">−</button><b id="bpmLbl">${sc ? Math.round(sc.bpm) : '…'}</b><button data-act="bpm" data-d="1">+</button>
-      <button data-act="bpm-mul" data-f="0.5">÷2</button><button data-act="bpm-mul" data-f="2">×2</button>
-      <button data-act="acc">${sc && sc.flats ? '♭' : '♯'}</button><button data-act="zoom-score" aria-label="Mesures par ligne">${SH.bars} mes.</button>
-    </div>
-    <div class="sheet-ctl"><button data-act="tap">Taper le tempo</button><button data-act="swing">Rythme : ${sc && sc.swing ? 'swing' : 'droit'}</button></div>
-    <p class="hint" id="rangeInfo">${rangeInfo(solo)}</p>
-    ${rangeControls(solo)}
+    ${sec('score', 'Partition', `<div class="sheet-ctl"><button class="wide" data-act="score-play" id="spBtn">${scoreBtn(PL.on && !PL.mix, PL.on && !PL.mix ? 'Arrêter' : 'Transcription')}</button><button class="wide" data-act="score-play" data-mix="1" id="spMix">${scoreBtn(PL.on && PL.mix, PL.on && PL.mix ? 'Arrêter' : 'Avec le solo')}</button></div>
     <div id="scoreWrap">${sc ? '' : '<p class="hint" id="scMsg">Analyse du solo…</p>'}</div>
     <div id="noteBar"></div>
-    <div class="sheet-exp"><button data-act="reanalyze">Réanalyser</button><button data-act="exp-midi">MIDI</button><button data-act="exp-xml">MusicXML</button></div>
-    <p class="hint">Brouillon automatique : touche une note pour l’écouter et la corriger. Le tempo se règle à l’oreille (÷2 / ×2 si le rythme est doublé ou divisé).</p>`)}
+    <div class="sheet-exp"><button data-act="exp-midi">MIDI</button><button data-act="exp-xml">MusicXML</button></div>
+    <p class="hint">Brouillon automatique : touche une note pour l’écouter et la corriger. « Transcription » joue la partition écrite, « Avec le solo » la joue avec l’enregistrement pour vérifier à l’oreille. Les réglages (tempo, rythme, tessiture) sont dans le bandeau du bas.</p>`)}
     ${sec('diag', 'Diagnostic', `${diagSummary(solo)}
       <div class="sheet-exp"><button data-act="diag">Envoyer un diagnostic</button></div>
-      <p class="hint">Petit fichier sans audio (réglages, hauteurs détectées, notes) à m’envoyer pour comprendre les erreurs de la partition.</p>`)}`;
+      <p class="hint">Petit fichier sans audio (réglages, hauteurs détectées, notes) à m’envoyer pour comprendre les erreurs de la partition.</p>`)}
+    <div class="dock">
+      <div class="dock-panel" id="dockPanel"${SH.dock ? '' : ' hidden'}>
+        <div class="dock-head"><b>Réglages de la partition</b><button class="icon-btn" data-act="dock-toggle" aria-label="Replier les réglages">▾</button></div>
+        <div class="sheet-ctl">
+          <span class="lbl">Tempo</span><button data-act="bpm" data-d="-1">−</button><b id="bpmLbl">${sc ? Math.round(sc.bpm) : '…'}</b><button data-act="bpm" data-d="1">+</button>
+          <button data-act="bpm-mul" data-f="0.5">÷2</button><button data-act="bpm-mul" data-f="2">×2</button>
+        </div>
+        <div class="sheet-ctl"><button data-act="tap">Taper le tempo</button><button data-act="swing">Rythme : ${sc && sc.swing ? 'swing' : 'droit'}</button>
+          <button data-act="acc" aria-label="Dièses ou bémols">${sc && sc.flats ? '♭' : '♯'}</button><button data-act="zoom-score" aria-label="Mesures par ligne">${SH.bars} mes.</button></div>
+        <p class="hint" id="rangeInfo">${rangeInfo(solo)}</p>
+        ${rangeControls(solo)}
+        <div class="sheet-exp"><button data-act="reanalyze">Réanalyser</button></div>
+      </div>
+      <div class="dock-bar">
+        <button class="dock-btn${SH.dock ? ' on' : ''}" data-act="dock-toggle" aria-expanded="${SH.dock}" aria-label="Réglages de la partition">${ICON_STAFF}</button>
+        <button id="sheetPlay" class="dock-play" data-act="sheet-play">▶ Solo</button>
+        <span></span>
+      </div>
+    </div>`;
 }
 /* Affiche la page entière (sections, timeline, partition) */
 function redrawSheet() {
@@ -478,8 +492,8 @@ function drawSheet() {
 const PL = { on: false, osc: [], timer: null, mix: false };
 function updateScorePlay() {
   const a = $('#spBtn'), m = $('#spMix'); if (!a || !m) return;
-  a.textContent = PL.on && !PL.mix ? '⏹ Arrêter' : '▶ Écouter la partition';
-  m.textContent = PL.on && PL.mix ? '⏹ Arrêter' : '▶ Avec le solo';
+  a.innerHTML = scoreBtn(PL.on && !PL.mix, PL.on && !PL.mix ? 'Arrêter' : 'Transcription');
+  m.innerHTML = scoreBtn(PL.on && PL.mix, PL.on && PL.mix ? 'Arrêter' : 'Avec le solo');
 }
 function stopScore() {
   const was = PL.on; PL.on = false;
@@ -621,6 +635,7 @@ document.addEventListener('click', e => {
   const d = b.dataset, sc = sc$();
   switch (d.act) {
     case 'sheet-open': openSheet(); break;
+    case 'dock-toggle': { SH.dock = !SH.dock; const pn = $('#dockPanel'); if (pn) pn.hidden = !SH.dock; const bt = document.querySelector('.dock-btn'); if (bt) { bt.classList.toggle('on', SH.dock); bt.setAttribute('aria-expanded', SH.dock); } break; }
     case 'sheet-close': closeSheet(); break;
     case 'sheet-play': { stopScore(); const s = curSolo(); if (audio.paused) { if (s) audio.currentTime = s.start; audio.play().catch(() => {}); } else audio.pause(); break; }
     case 'note': SH.sel = +d.ni; if (sc) playTone(sc.notes[SH.sel].m); drawSheet(); break;
