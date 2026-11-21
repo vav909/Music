@@ -252,7 +252,7 @@ function renderScore(sc, W) {
     if (e.m === null) { out.push(restSVG(e.l, e.x, e.top)); return; }
     const sel = e.ni === SH.sel, col = sel ? BLUE : INK, s = e.sp, st = accState.get(e.k);
     const filled = e.l < 8, grp = grouped.get(i), up = grp ? grp.up : s.dn < 34;
-    let g = `<g data-act="note" data-ni="${e.ni}" style="cursor:pointer"><circle cx="${e.x}" cy="${e.y}" r="15" fill="${sel ? 'rgba(31,111,235,.12)' : 'transparent'}"/>`;
+    let g = `<g data-act="note" data-ni="${e.ni}" style="cursor:pointer"><circle class="hit" cx="${e.x}" cy="${e.y}" r="15" fill="${sel ? 'rgba(31,111,235,.12)' : 'transparent'}"/>`;
     // lignes supplémentaires
     for (let dn = 40; dn <= s.dn; dn += 2) { const yy = e.top + 4 * SP - (dn - 30) * SP / 2; g += `<line x1="${e.x - 9}" x2="${e.x + 9}" y1="${yy}" y2="${yy}" stroke="${INK}" stroke-width="1.2"/>`; }
     for (let dn = 28; dn >= s.dn; dn -= 2) { const yy = e.top + 4 * SP - (dn - 30) * SP / 2; g += `<line x1="${e.x - 9}" x2="${e.x + 9}" y1="${yy}" y2="${yy}" stroke="${INK}" stroke-width="1.2"/>`; }
@@ -319,6 +319,7 @@ function sheetHTML(solo) {
     </div>
     <div class="sheet-ctl"><button data-act="tap">Taper le tempo</button><button data-act="swing">Rythme : ${sc && sc.swing ? 'swing' : 'droit'}</button></div>
     <p class="hint" id="rangeInfo">${rangeInfo(solo)}</p>
+    <div class="sheet-ctl"><button data-act="score-play" id="spBtn">${PL.on && !PL.mix ? '⏹ Arrêter' : '▶ Écouter la partition'}</button><button data-act="score-play" data-mix="1" id="spMix">${PL.on && PL.mix ? '⏹ Arrêter' : '▶ Avec le solo'}</button></div>
     <div id="scoreWrap">${sc ? '' : '<p class="hint" id="scMsg">Analyse du solo…</p>'}</div>
     <div id="noteBar"></div>
     <div class="sheet-exp"><button data-act="reanalyze">Réanalyser</button><button data-act="exp-midi">MIDI</button><button data-act="exp-xml">MusicXML</button></div>
@@ -349,6 +350,51 @@ function drawSheet() {
       <div class="nb-row"><button data-act="n-dup">＋ Note après</button><button class="danger" data-act="n-del">Supprimer la note</button></div>`;
   } else bar.innerHTML = '';
 }
+/* ---------- Écoute de la partition écrite (sons de flûte synthétiques), seule ou avec le solo d'origine ---------- */
+const PL = { on: false, osc: [], timer: null, mix: false };
+function updateScorePlay() {
+  const a = $('#spBtn'), m = $('#spMix'); if (!a || !m) return;
+  a.textContent = PL.on && !PL.mix ? '⏹ Arrêter' : '▶ Écouter la partition';
+  m.textContent = PL.on && PL.mix ? '⏹ Arrêter' : '▶ Avec le solo';
+}
+function stopScore() {
+  const was = PL.on; PL.on = false;
+  PL.osc.forEach(o => { try { o.stop(); } catch {} }); PL.osc = []; clearInterval(PL.timer);
+  document.querySelectorAll('#scoreWrap .playing').forEach(g => g.classList.remove('playing'));
+  if (was && PL.mix) audio.pause();
+  updateScorePlay();
+}
+function playScore(mix) {
+  const sc = sc$(), solo = curSolo(); if (!sc || !solo) return;
+  if (PL.on) { const again = PL.mix !== mix; stopScore(); if (!again) return; }
+  if (!sc.notes.length) { toast('La partition est vide'); return; }
+  audio.pause(); ensureBeep(); if (!beepCtx) { toast('Son indisponible'); return; }
+  const rate = audio.playbackRate || 1, g = 60 / sc.bpm / 4, ctx = beepCtx;
+  const evs = sc.notes.map((n, i) => ({ i, t: Math.max(0, sc.lead + n.p * g), d: Math.max(0.08, n.l * g * 0.93), m: n.m }));
+  const when = ctx.currentTime + 0.2; PL.on = true; PL.mix = !!mix;
+  if (mix) { audio.currentTime = solo.start; audio.play().catch(() => {}); }
+  const vol = mix ? 0.12 : 0.3;
+  for (const e of evs) {
+    const o = ctx.createOscillator(), o2 = ctx.createOscillator(), gn = ctx.createGain(), a = when + e.t / rate, z = a + e.d / rate;
+    o.type = 'sine'; o2.type = 'sine'; o.frequency.value = 440 * Math.pow(2, (e.m - 69) / 12); o2.frequency.value = o.frequency.value * 2;
+    const g2 = ctx.createGain(); g2.gain.value = 0.18; o2.connect(g2).connect(gn);
+    gn.gain.setValueAtTime(0.0001, a); gn.gain.linearRampToValueAtTime(vol, a + 0.03); gn.gain.setValueAtTime(vol, Math.max(a + 0.03, z - 0.05)); gn.gain.linearRampToValueAtTime(0.0001, z);
+    o.connect(gn).connect(ctx.destination); o.start(a); o2.start(a); o.stop(z + 0.02); o2.stop(z + 0.02); PL.osc.push(o, o2);
+  }
+  const end = Math.max(...evs.map(e => e.t + e.d)), solo1 = solo.end - solo.start;
+  let cur = -1;
+  PL.timer = setInterval(() => {
+    const el = (ctx.currentTime - when) * rate;
+    if (el > Math.max(end, mix ? solo1 : 0) + 0.3) { stopScore(); return; }
+    const now = evs.find(e => el >= e.t && el < e.t + e.d), idx = now ? now.i : -1;
+    if (idx !== cur) {
+      document.querySelectorAll('#scoreWrap .playing').forEach(x => x.classList.remove('playing'));
+      const el2 = idx >= 0 && document.querySelector(`#scoreWrap g[data-ni="${idx}"]`); if (el2) el2.classList.add('playing');
+      cur = idx;
+    }
+  }, 40);
+  updateScorePlay();
+}
 function updateSheetPlay() { const b = $('#sheetPlay'); if (b) b.textContent = audio.paused ? '▶ Solo' : '⏸ Solo'; }
 audio.addEventListener('play', updateSheetPlay); audio.addEventListener('pause', updateSheetPlay);
 
@@ -368,11 +414,11 @@ async function runAnalysis() {
 }
 function openSheet() {
   const solo = curSolo(); if (!solo) return;
-  SH.sel = null; const sh = $('#sheet'); sh.hidden = false; document.body.style.overflow = 'hidden';
+  stopScore(); SH.sel = null; const sh = $('#sheet'); sh.hidden = false; document.body.style.overflow = 'hidden';
   sh.innerHTML = sheetHTML(solo); updateSheetPlay();
   if (solo.score && solo.score.diag) drawSheet(); else if (solo.score && solo.score.edited) drawSheet(); else runAnalysis();
 }
-function closeSheet() { $('#sheet').hidden = true; document.body.style.overflow = ''; audio.pause(); }
+function closeSheet() { stopScore(); $('#sheet').hidden = true; document.body.style.overflow = ''; audio.pause(); }
 
 function edit(fn) {
   const sc = sc$(); if (!sc || SH.sel === null) return;
@@ -452,10 +498,11 @@ document.addEventListener('click', e => {
   switch (d.act) {
     case 'sheet-open': openSheet(); break;
     case 'sheet-close': closeSheet(); break;
-    case 'sheet-play': { const s = curSolo(); if (audio.paused) { if (s) audio.currentTime = s.start; audio.play().catch(() => {}); } else audio.pause(); break; }
+    case 'sheet-play': { stopScore(); const s = curSolo(); if (audio.paused) { if (s) audio.currentTime = s.start; audio.play().catch(() => {}); } else audio.pause(); break; }
     case 'note': SH.sel = +d.ni; if (sc) playTone(sc.notes[SH.sel].m); drawSheet(); break;
     case 'bpm': changeBpm(sc.bpm + +d.d); break;
     case 'tap': tapTempo(); break;
+    case 'score-play': playScore(!!d.mix); break;
     case 'swing': if (sc) { if (sc.edited && !confirm('Changer le rythme refait la partition et efface tes corrections. Continuer ?')) break; sc.swing = !sc.swing; requantize(sc); SH.sel = null; saveSoon(); $('#sheet').innerHTML = sheetHTML(curSolo()); drawSheet(); updateSheetPlay(); } break;
     case 'bpm-mul': changeBpm(sc.bpm * +d.f); break;
     case 'acc': if (sc) { sc.flats = !sc.flats; saveSoon(); $('#sheet').innerHTML = sheetHTML(curSolo()); drawSheet(); updateSheetPlay(); } break;
