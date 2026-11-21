@@ -12,9 +12,17 @@ ralentir sans changer la hauteur. Fichiers statiques sans build : `index.html`, 
 - Partage : chacun garde ses propres fichiers audio. On échange uniquement repères de solos, noms de solistes, partitions.
 - Usage : travail à la maison, sur pupitre ; partage entre amis.
 - Style : fond blanc, gris clair, bâtonnets rectangulaires bleu clair pour le son, sélection en bleu plus soutenu,
-  quelques touches de bleu pur. Sobre, mobile d'abord (boutons ≥ 44 px, commandes au pouce).
-  **À appliquer dans cette app** (le thème actuel est sombre).
+  quelques touches de bleu pur. Sobre, mobile d'abord (boutons ≥ 44 px, commandes au pouce). Appliqué.
 - Priorité : tester d'abord avec un MP3 téléchargé.
+
+## Déjà dans l'app
+Bibliothèque de morceaux (MP3 importés, stockage local), solos nommés avec instrument, soliste et favori, artiste/album/pochette
+(recherche automatique iTunes, sinon saisie), boucle, tempo 25–150 % sans changer la hauteur, montée progressive (+5 % par passage),
+pause avec bips entre deux passages, pédale Bluetooth (espace/↓ lecture, ↑ début du solo), export/import JSON des repères (sans audio).
+
+## À faire ensuite
+Import Drive, import d'une playlist Deezer (titres seulement, puis association aux fichiers), partition modifiable et transposable,
+détection automatique des solos (serveur), changement de tonalité.
 
 ## Comment modifier l'app et la mettre en ligne
 1. Modifier les fichiers à la racine. Garder l'app sans dépendance ni étape de build.
