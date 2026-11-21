@@ -10,5 +10,10 @@ App mobile (PWA, pensée pour Android) pour repérer, isoler et boucler des solo
 - Tout est stocké localement sur le téléphone (IndexedDB), fonctionne hors ligne
 
 ## Essayer
-Activer GitHub Pages (Settings → Pages → branche, dossier `/`), ouvrir l'URL sur Android avec Chrome,
-puis menu ⋮ → « Installer l'application ». En local : `python3 -m http.server` puis ouvrir `localhost:8000`.
+L'app est publiée automatiquement sur GitHub Pages à chaque modification de `main` : ouvrir
+`https://vav909.github.io/Music/`, puis installer l'app depuis le navigateur (Android : menu ⋮ ; iPhone : Partager → « Sur l'écran d'accueil »).
+En local : `python3 -m http.server` puis ouvrir `localhost:8000`.
+
+## Documentation
+- [Mise en ligne et mise à jour](docs/DEPLOIEMENT.md) : réglage unique, déploiement automatique, dépannage.
+- [CLAUDE.md](CLAUDE.md) : décisions du projet et méthode de travail avec Claude.
