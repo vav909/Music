@@ -101,12 +101,21 @@ async function importFiles(files) {
 }
 
 /* ---------- Navigation / rendu ---------- */
+/* En-tête du morceau : pochette, titre, artiste · album ; le crayon à droite ouvre la modification. */
+function updateHeader() {
+  const song = S.song, t = $('#title');
+  t.classList.toggle('song', !!song);
+  if (!song) { t.textContent = 'Solo Looper'; return; }
+  const sub = [song.artist, song.album].filter(Boolean).join(' · ');
+  t.innerHTML = `<span class="hd">${song.cover ? `<img class="hd-cover" src="${esc(song.cover)}" alt="Pochette" onerror="this.outerHTML='<span class=&quot;hd-cover ph&quot;>♪</span>'">` : '<span class="hd-cover ph">♪</span>'}<span class="hd-t"><b>${esc(song.title || 'Sans titre')}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span></span>`;
+}
 function render() {
   const inSong = !!S.song;
   $('#backBtn').hidden = !inSong;
   $('#tabs').hidden = inSong;
   $('#topAction').hidden = inSong;
-  $('#title').textContent = inSong ? S.song.title : 'Solo Looper';
+  $('#editBtn').hidden = !inSong;
+  updateHeader();
   inSong ? renderSong() : renderLibrary();
   document.querySelectorAll('#tabs .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === S.tab));
 }
@@ -161,11 +170,10 @@ function renderSong() {
     </div>
     <div class="tempo">
       <button data-act="tempo" data-d="-5">−</button>
-      <input type="range" id="tempoRange" min="25" max="150" step="1" aria-label="Tempo">
+      <input type="range" id="tempoRange" min="30" max="150" step="10" aria-label="Tempo, de dix en dix">
       <button data-act="tempo" data-d="5">+</button>
-      <b id="tempoLbl"></b>
     </div>
-    <div class="presets">${[50, 60, 70, 80, 90, 100].map(v => `<button data-act="preset" data-v="${v}">${v}</button>`).join('')}</div>
+    <div class="tempo-info"><b id="tempoLbl"></b><button id="resetTempo" data-act="tempo-reset">↺ Tempo original</button></div>
   </section>
   <section class="panel" style="padding-bottom:0"><div class="opts">
     <button id="gapBtn" data-act="gap"></button><button id="rampBtn" data-act="ramp"></button></div></section>
@@ -219,11 +227,7 @@ function renderPanel() {
   const p = $('#soloPanel'); if (!p) return;
   const song = S.song, act = curSolo();
   const list = song.solos.filter(s => !S.onlyFav || s.fav).sort((a, b) => a.start - b.start);
-  let h = `<div class="meta">${song.cover ? `<img class="cover" src="${esc(song.cover)}" alt="Pochette" onerror="this.outerHTML='<div class=&quot;cover ph&quot;>♪</div>'">` : '<div class="cover ph">♪</div>'}
-     <div class="meta-f"><input class="txt" id="songTitle" value="${esc(song.title)}" placeholder="Titre" aria-label="Titre">
-    <input class="txt" id="songArtist" value="${esc(song.artist)}" placeholder="Artiste" aria-label="Artiste">
-    <input class="txt" id="songAlbum" value="${esc(song.album)}" placeholder="Album" aria-label="Album">
-    <button data-act="lookup">Identifier le morceau</button><button data-act="cover-file">Pochette…</button><button data-act="diag">Envoyer un diagnostic</button></div></div>`;
+  let h = '';
   if (act) {
     h += `<div class="editor">
       <input class="txt" id="soloName" value="${esc(act.name)}" placeholder="Nom du solo" aria-label="Nom du solo">
@@ -232,7 +236,7 @@ function renderPanel() {
       ${['start', 'end'].map(w => `<div class="edrow"><span class="lbl">${w === 'start' ? 'Début' : 'Fin'}</span><b>${fmt(act[w], true)}</b>
         <button data-act="nudge" data-w="${w}" data-d="-1">−</button><button data-act="nudge" data-w="${w}" data-d="1">+</button>
         <button class="here" data-act="here" data-w="${w}">⌖ ici</button></div>`).join('')}
-      <button class="cta2" data-act="sheet-open">Voir la partition de ce solo</button>
+      <button class="cta2" data-act="sheet-open">Détails du solo<small>Partition · lecture · diagnostic</small></button>
       <div class="edrow2"><button data-act="step">Pas : ${S.step} s</button><button class="danger" data-act="solo-del">Supprimer</button></div>
     </div>`;
   }
@@ -243,10 +247,7 @@ function renderPanel() {
       <button class="star ${s.fav ? 'on' : ''}" data-act="star" data-solo="${s.id}" aria-label="Favori">${s.fav ? '★' : '☆'}</button>
     </div>`).join('') : `<p class="hint">${song.solos.length ? 'Aucun favori.' : 'Écoute le morceau, puis appuie sur « Nouveau solo » quand un solo commence.'}</p>`;
   p.innerHTML = h;
-  const st = $('#songTitle'), sa = $('#songArtist'), sb = $('#songAlbum'), sl = $('#soloSoloist');
-  if (st) st.addEventListener('input', () => { song.title = st.value; $('#title').textContent = song.title || 'Sans titre'; saveSoon(); });
-  if (sa) sa.addEventListener('input', () => { song.artist = sa.value; saveSoon(); });
-  if (sb) sb.addEventListener('input', () => { song.album = sb.value; saveSoon(); });
+  const sl = $('#soloSoloist');
   if (sl) sl.addEventListener('input', () => { act.soloist = sl.value; saveSoon(); });
   const n = $('#soloName'), i = $('#soloInstr');
   if (n) n.addEventListener('input', () => { act.name = n.value; saveSoon(); const b = document.querySelector(`.solo.sel .pick b`); if (b) b.textContent = act.name + (act.instrument ? ' · ' + act.instrument : ''); });
@@ -258,8 +259,8 @@ function updateTransport() {
   const pb = $('#playBtn'); if (!pb) return;
   pb.textContent = (audio.paused && !S.waiting) ? '▶' : '⏸';
   $('#loopBtn').classList.toggle('on', S.loop);
-  $('#tempoRange').value = S.tempo; $('#tempoLbl').textContent = S.tempo + '%';
-  document.querySelectorAll('.presets button').forEach(b => b.classList.toggle('on', +b.dataset.v === S.tempo));
+  $('#tempoRange').value = S.tempo; $('#tempoLbl').textContent = 'Tempo ' + S.tempo + ' %';
+  $('#resetTempo').disabled = S.tempo === 100;
   const g = $('#gapBtn'), rb = $('#rampBtn');
   if (g) { g.textContent = 'Pause entre passages : ' + (S.gap ? S.gap + ' s' : 'non'); g.classList.toggle('on', S.gap > 0); }
   if (rb) { rb.textContent = 'Montée progressive : ' + (S.ramp ? 'oui' : 'non'); rb.classList.toggle('on', S.ramp); }
@@ -407,7 +408,31 @@ function renderChooser(msg) {
       <img src="${esc(h.thumb || '')}" alt="" onerror="this.style.visibility='hidden'"><span><b>${esc(h.title)}</b><small>${esc(h.artist)}</small><small>${esc(h.album || '')}${h.year ? ' · ' + esc(h.year) : ''}${h.duration ? ' · ' + fmt(h.duration) : ''}${h.sameLength ? ' · même durée' : ''} · ${esc(h.source)}</small></span></button>`).join('')}</div>`;
   const inp = $('#chTerm'); if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); chSearch(inp.value); } });
 }
-function closeChooser() { $('#chooser').hidden = true; if ($('#sheet').hidden) document.body.style.overflow = ''; }
+function closeChooser() { $('#chooser').hidden = true; if ($('#sheet').hidden && $('#edit').hidden) document.body.style.overflow = ''; }
+/* Modifier le morceau : titre, artiste (origine), album, pochette, identification automatique */
+function editHTML(song) {
+  return `<div class="sheet-top"><button class="icon-btn" data-act="edit-close" aria-label="Fermer">←</button><b>Modifier le morceau</b></div>
+    <div class="edit-body">
+      <div class="edit-cover">${song.cover ? `<img class="cover" src="${esc(song.cover)}" alt="Pochette" onerror="this.outerHTML='<div class=&quot;cover ph&quot;>♪</div>'">` : '<div class="cover ph">♪</div>'}
+        <button data-act="cover-file">Changer la pochette…</button></div>
+      <label class="fld">Titre du morceau<input class="txt" id="songTitle" value="${esc(song.title)}" placeholder="Titre"></label>
+      <label class="fld">Artiste (origine)<input class="txt" id="songArtist" value="${esc(song.artist)}" placeholder="Artiste"></label>
+      <label class="fld">Album<input class="txt" id="songAlbum" value="${esc(song.album)}" placeholder="Album"></label>
+      <button class="cta2" data-act="lookup">Identifier le morceau</button>
+      <p class="hint">« Identifier » cherche le titre, l’artiste, l’album et la pochette ; tu choisis ensuite le bon résultat.</p>
+      <button data-act="edit-close">Terminé</button>
+    </div>`;
+}
+function renderEdit() {
+  const song = S.song, el = $('#edit'); if (!song || el.hidden) return;
+  el.innerHTML = editHTML(song);
+  for (const [id, key] of [['songTitle', 'title'], ['songArtist', 'artist'], ['songAlbum', 'album']]) {
+    const i = $('#' + id); if (i) i.addEventListener('input', () => { song[key] = i.value; saveSoon(); updateHeader(); });
+  }
+}
+function openEdit() { if (!S.song) return; $('#edit').hidden = false; document.body.style.overflow = 'hidden'; renderEdit(); }
+function closeEdit() { $('#edit').hidden = true; if ($('#sheet').hidden && $('#chooser').hidden) document.body.style.overflow = ''; updateHeader(); if (S.song) renderPanel(); }
+function refreshMeta() { updateHeader(); renderEdit(); renderPanel(); }
 /* auto : recherche à partir du titre / nom de fichier / artiste ; sinon les mots saisis, tels quels */
 async function chSearch(term, auto) {
   const song = S.song; if (!song || CH.busy) return;
@@ -428,7 +453,7 @@ async function chSearch(term, auto) {
 async function lookup() {
   const song = S.song; if (!song) return;
   let got = false; try { got = await applyFileTags(song); } catch (e) { console.warn(e); }
-  if (got) { renderPanel(); toast('Infos lues dans le fichier MP3'); }
+  if (got) { refreshMeta(); toast('Infos lues dans le fichier MP3'); }
   CH.hits = []; CH.term = '';
   await chSearch('', true);
 }
@@ -436,15 +461,15 @@ async function pickHit(i) {
   const song = S.song, h = CH.hits[i]; if (!song || !h) return;
   song.title = h.title || song.title; song.artist = h.artist || song.artist; song.album = h.album || song.album;
   if (song.lookupLog) song.lookupLog.chosen = { source: h.source, track: h.title, artist: h.artist, album: h.album };
-  saveSongNow(song); closeChooser(); $('#title').textContent = song.title; renderPanel(); toast('Titre, artiste et album mis à jour');
+  saveSongNow(song); closeChooser(); refreshMeta(); toast('Titre, artiste et album mis à jour');
   if (!h.cover) return;
   try { song.cover = await Meta.coverToDataURL(h.cover); }                  // copie réduite, disponible hors ligne
   catch { song.cover = h.cover; }                                            // service sans CORS : on garde l’adresse
-  await saveSongNow(song); if (S.song === song) renderPanel();
+  await saveSongNow(song); if (S.song === song) refreshMeta();
 }
 async function setCoverFile(file) {
   const song = S.song; if (!song || !file) return;
-  try { song.cover = await Meta.coverToDataURL(file); await saveSongNow(song); if (S.song === song) renderPanel(); toast('Pochette enregistrée'); }
+  try { song.cover = await Meta.coverToDataURL(file); await saveSongNow(song); if (S.song === song) refreshMeta(); toast('Pochette enregistrée'); }
   catch { toast('Image illisible'); }
 }
 $('#coverInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) setCoverFile(f); });
@@ -531,7 +556,9 @@ document.addEventListener('click', async e => {
     case 'seek': audio.currentTime = Math.max(0, Math.min(S.song.duration, audio.currentTime + +d.d)); updatePlayhead(); break;
     case 'loop': S.loop = !S.loop; updateTransport(); break;
     case 'tempo': setTempo(S.tempo + +d.d); break;
-    case 'preset': setTempo(+d.v); break;
+    case 'tempo-reset': setTempo(100); break;
+    case 'edit-song': openEdit(); break;
+    case 'edit-close': closeEdit(); break;
     case 'zoom': S.zoom = Math.max(0, Math.min(ZOOMS.length - 1, S.zoom + +d.d)); drawTimeline(); updatePlayhead(true); break;
     case 'solo-pick':
       if (S.soloId === d.solo) { play(); } else pickSolo(d.solo, true);
