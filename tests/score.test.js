@@ -9,7 +9,7 @@ const FILE = path.join(__dirname, '..', 'score.js');
 let fails = 0;
 const t = async (name, fn) => { try { await fn(); console.log('  ok  ', name); } catch (e) { fails++; console.log('  ÉCHEC', name, '\n       ', e.message); } };
 const rawOf = r => Array.isArray(r) ? r : r.raw;
-const analyse = async (x, total, instrument) => rawOf(await loadScore(FILE, x, 44100).analyzeSolo({ id: 'a' }, { start: 0, end: total, instrument }, () => {}));
+const analyse = async (x, total, instrument, extra = {}) => rawOf(await loadScore(FILE, x, 44100).analyzeSolo({ id: 'a' }, { start: 0, end: total, instrument, ...extra }, () => {}));
 /* notes imposées : [[hauteur, début, fin], …] */
 const make = (spec, bpm = 120) => ({ bpm, total: Math.max(...spec.map(s => s[2])) + 0.3, notes: spec.map(([m, t0, t1]) => ({ m, t0, t1 })) });
 
@@ -67,6 +67,28 @@ const make = (spec, bpm = 120) => ({ bpm, total: Math.max(...spec.map(s => s[2])
   await t('le diagnostic décrit les images sans hauteur', async () => {
     const l = make([[79, 0.2, 1.0]]), r = await loadScore(FILE, render({ line: l, accomp: false }), 44100).analyzeSolo({ id: 'a' }, { start: 0, end: l.total, instrument: 'Flûte' }, () => {});
     assert.ok(Array.isArray(r.diag.bands) && r.diag.bands.length === 5 && r.diag.track.length === r.diag.frames);
+  });
+
+  console.log('Musique latine (basse à harmoniques fortes, montuno, percussions) : la flûte joue plus haut');
+  const latin = seed => { const l = makeLine({ bpm: 130, bars: 6, lo: 77, hi: 90, seed, swing: false }); return { l, x: render({ line: l, accomp: false, latin: 1 }) }; };
+  await t('plage réglée à la main : réglage pris en compte, borné', () => {
+    const r = api.soloRange({ instrument: 'Flûte', range: { lo: 75, hi: 96 } }); assert.strictEqual(r.lo, 75); assert.strictEqual(r.hi, 96); assert.strictEqual(r.manual, true);
+    assert.strictEqual(api.soloRange({ instrument: 'Flûte', range: { lo: 80, hi: 70 } }).hi, 86);
+    assert.strictEqual(api.soloRange({ instrument: 'Flûte' }).lo, 60);
+  });
+  await t('par défaut, la basse et le piano sont pris pour le soliste (le défaut décrit dans le diagnostic)', async () => {
+    const { l, x } = latin(3), raw = await analyse(x, l.total, 'Flûte'), m = raw.map(n => n.m).sort((a, b) => a - b);
+    assert.ok(m[m.length >> 1] < 74, `médiane ${m[m.length >> 1]}`);
+  });
+  await t('plage réglée à la main : ≥ 75 % des notes justes ; avec « voix aiguë » : ≥ 85 %', async () => {
+    for (const seed of [3, 7]) {
+      const { l, x } = latin(seed), a = score(await analyse(x, l.total, 'Flûte', { range: { lo: 75, hi: 96 } }), l.notes), b = score(await analyse(x, l.total, 'Flûte', { range: { lo: 75, hi: 96 }, top: true }), l.notes);
+      assert.ok(a.ok >= a.truth * 0.75, `graine ${seed}, plage : ${JSON.stringify(a)}`); assert.ok(b.ok >= b.truth * 0.85, `graine ${seed}, plage + voix aiguë : ${JSON.stringify(b)}`);
+    }
+  });
+  await t('« voix aiguë » ne dégrade pas un solo normal', async () => {
+    const s = score(await analyse(render({ line, accomp: false }), line.total, 'Flûte', { top: true }), line.notes);
+    assert.ok(s.ok + s.oct >= s.truth * 0.95, JSON.stringify(s));
   });
 
   if (fails) { console.log(`\n${fails} test(s) en échec`); process.exit(1); }

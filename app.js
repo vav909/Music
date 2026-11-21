@@ -413,7 +413,7 @@ async function chSearch(term, auto) {
   const song = S.song; if (!song || CH.busy) return;
   CH.busy = true; CH.term = term; CH.hits = []; renderChooser('Recherche en cours…');
   try {
-    const r = await Meta.searchAll({ title: (song.tags && song.tags.title) || song.title, artist: song.artist, album: song.album, file: song.file || song.title, duration: song.duration, query: auto ? '' : term });
+    const r = await Meta.searchAll({ title: (song.tags && song.tags.title) || song.title, artist: (song.tags && song.tags.artist) || song.artist, album: (song.tags && song.tags.album) || song.album, file: song.file || song.title, duration: song.duration, query: auto ? '' : term });
     CH.hits = r.candidates; if (auto && r.queries[0]) CH.term = r.queries[0].text;
     song.lookupLog = { term: CH.term, at: new Date().toISOString(), n: r.candidates.length, errors: r.errors, top: r.candidates.slice(0, 5).map(h => ({ source: h.source, track: h.title, artist: h.artist, album: h.album, score: h.score })) };
     saveSoon();
@@ -457,7 +457,7 @@ async function diagnostic() {
     app: 'solo-looper-diag', version: 3, date: new Date().toISOString(), ua: navigator.userAgent, viewport: [innerWidth, innerHeight],
     song: { title: song.title, file: song.file || null, artist: song.artist || '', album: song.album || '', duration: song.duration,
       coverKind: !song.cover ? 'aucune' : /^data:/.test(song.cover) ? 'intégrée au fichier' : 'en ligne', tags: song.tags || null, lookup: song.lookupLog || null },
-    solo: solo ? { name: solo.name, instrument: solo.instrument, soloist: solo.soloist, start: solo.start, end: solo.end, tempoPct: solo.tempo } : null,
+    solo: solo ? { range: solo.range || null, top: !!solo.top, name: solo.name, instrument: solo.instrument, soloist: solo.soloist, start: solo.start, end: solo.end, tempoPct: solo.tempo } : null,
     score: sc ? { bpm: sc.bpm, lead: sc.lead, swing: !!sc.swing, tapped: !!sc.tapped, flats: !!sc.flats, edited: !!sc.edited, diag: sc.diag || null, raw: sc.raw, notes: sc.notes } : null,
   };
   const file = new File([JSON.stringify(rep, null, 1)], 'diagnostic-solo-looper.json', { type: 'application/json' });
@@ -472,7 +472,7 @@ const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u030
 function exportSolos() {
   const songs = S.songs.filter(sg => sg.solos.length).map(sg => ({
     title: sg.title, file: sg.file || '', artist: sg.artist || '', album: sg.album || '',
-    solos: sg.solos.map(({ name, instrument, soloist, start, end, tempo, fav, score }) => ({ name, instrument, soloist: soloist || '', start, end, tempo, fav, score })),
+    solos: sg.solos.map(({ name, instrument, soloist, start, end, tempo, fav, score, range, top }) => ({ name, instrument, soloist: soloist || '', start, end, tempo, fav, score, range, top })),
   }));
   if (!songs.length) { toast('Aucun solo à partager pour l\u2019instant'); return; }
   const blob = new Blob([JSON.stringify({ app: 'solo-looper', version: 1, songs }, null, 1)], { type: 'application/json' });

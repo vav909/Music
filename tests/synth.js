@@ -30,7 +30,7 @@ function makeLine({ bpm = 150, bars = 12, lo = 67, hi = 90, seed = 7, swing = tr
 }
 
 /* Mixe tout dans un tableau Float32 mono. */
-function render({ line, sr = 44100, accomp = true, gain = 1, seed = 3, live = false }) {
+function render({ line, sr = 44100, accomp = true, gain = 1, seed = 3, live = false, latin = false }) {
   const n = Math.ceil((line.total + 0.5) * sr), x = new Float32Array(n), r = rng(seed), beat = 60 / line.bpm;
   const add = (t0, t1, f, amp, harm, att, rel, vib) => {
     const i0 = Math.floor(t0 * sr), i1 = Math.min(n, Math.floor(t1 * sr));
@@ -68,6 +68,12 @@ function render({ line, sr = 44100, accomp = true, gain = 1, seed = 3, live = fa
     for (let i = 0; i < n; i++) x[i] += 0.05 * live * (r() * 2 - 1);
     const dry = Float32Array.from(x);
     for (const [dl, g] of [[0.08, 0.35], [0.15, 0.25], [0.23, 0.15], [0.31, 0.1]]) { const o = Math.floor(dl * sr); for (let i = o; i < n; i++) x[i] += g * live * dry[i - o]; }
+  }
+  if (latin) {   // musique latine : tumbao de basse (3e et 4e harmoniques fortes), montuno de piano, congas et timbales ; la flûte joue plus haut
+    const bars = Math.ceil(line.total / (4 * beat)), roots = [44, 46, 44, 46], mont = [[61, 68], [63, 70], [61, 68], [66, 73]];
+    for (let b = 0; b < bars * 4; b++) { const root = roots[Math.floor(b / 4) % 4]; for (const [o, d] of [[0, 0.5], [0.75, 0.25]]) add((b + o) * beat, (b + o + d) * beat, hz(root + (o ? 7 : 0)), 0.3 * latin, [1, 0.7, 0.9, 1.0, 0.5, 0.3], 0.01, 0.06, false); }
+    for (let e = 0; e < bars * 8; e++) { const [a, c] = mont[Math.floor(e / 8) % 4], m = e % 2 ? c : a; add(e * beat / 2, e * beat / 2 + beat * 0.4, hz(m), 0.16 * latin, [1, 0.5, 0.3, 0.2], 0.005, 0.1, false); add(e * beat / 2, e * beat / 2 + beat * 0.4, hz(m + 12), 0.1 * latin, [1, 0.5, 0.3], 0.005, 0.1, false); }
+    for (let k = 0; k < bars * 16; k++) { const i0 = Math.floor(k * beat / 4 * sr); for (let q = 0; q < 1800 && i0 + q < n; q++) x[i0 + q] += 0.12 * latin * (r() * 2 - 1) * Math.exp(-q / 450) * (k % 3 === 0 ? 1.6 : 1); }
   }
   let mx = 0; for (let i = 0; i < n; i++) mx = Math.max(mx, Math.abs(x[i]));
   for (let i = 0; i < n; i++) x[i] = x[i] / mx * 0.8;

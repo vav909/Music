@@ -26,7 +26,7 @@ function loadScore(file, samples, sr) {
   `, ctx);
   ctx.__SAMPLES = samples; ctx.__SR = sr;
   const src = fs.readFileSync(file, 'utf8');
-  const names = ['analyzeSolo', 'detectNotes', 'estimateBpm', 'requantize', 'quantize', 'buildEvents', 'resolveRange', 'rangeKeyFor', 'RANGES', 'rangeFor', 'swingPos', 'bpmFromTaps', 'beatPos']
+  const names = ['analyzeSolo', 'detectNotes', 'estimateBpm', 'requantize', 'quantize', 'buildEvents', 'resolveRange', 'rangeKeyFor', 'RANGES', 'rangeFor', 'soloRange', 'swingPos', 'bpmFromTaps', 'beatPos']
     .filter(n => new RegExp('(function|const|let)\\s+' + n + '\\b').test(src));
   vm.runInContext(src + `\n;globalThis.__api = { ${names.join(', ')} };`, ctx);
   return ctx.__api;
