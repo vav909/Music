@@ -145,3 +145,7 @@ input.txt { font: inherit; color: var(--text); background: var(--bg); border: 1p
 .ch-hit span { display: grid; gap: 1px; min-width: 0; }
 .ch-hit b, .ch-hit small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ch-hit small { color: var(--muted); font-size: 13px; }
+
+/* note en cours d'écoute dans la partition */
+#scoreWrap .playing :not(.hit)[fill]:not([fill="none"]) { fill: var(--accent) !important; }
+#scoreWrap .playing [stroke]:not([stroke="none"]) { stroke: var(--accent) !important; }
