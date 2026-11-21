@@ -215,3 +215,25 @@ details.sec[open] > summary::after { content: '▴'; }
 .dock-play { min-width: 170px; min-height: 56px; border-radius: 28px; background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 18px; }
 .sheet-ctl button .ic, .sheet-ctl button svg { flex: none; }
 .sheet-ctl button.wide { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+
+/* Lecteur : version allégée (boucle, lecture au centre, curseur de tempo) et version complète */
+.ctl { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 6px; }
+.player.full .ctl { grid-template-columns: 56px 1fr auto 1fr 56px; }
+.ctl button { min-height: 56px; padding: 0; }
+.ctl .loop { justify-self: start; width: 56px; font-size: 24px; opacity: .55; }
+.ctl .loop.on { opacity: 1; background: var(--tint); }
+.ctl .big { min-width: 96px; min-height: 60px; background: var(--accent); color: var(--accent-ink); border-radius: 30px; display: grid; place-items: center; }
+.ctl .seekb { display: none; width: 56px; background: transparent; place-items: center; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none; }
+.player.full .ctl .seekb { display: grid; justify-self: center; }
+.ctl .expand { justify-self: end; width: 56px; background: transparent; display: grid; place-items: center; color: var(--muted); }
+.player.full .ctl .expand svg { transform: rotate(180deg); }
+.tempo .full-only, .tempo-info { display: none; }
+.player.full .tempo .full-only { display: inline-block; }
+.player.full .tempo-info { display: flex; justify-content: flex-end; }
+.tempo b { min-width: 48px; }
+svg.ic { flex: none; }
+
+/* Ligne de solo : pastille de lecture, le nom déplie les champs */
+.solo-play { width: 44px; min-width: 44px; height: 44px; min-height: 44px; margin-left: 8px; padding: 0; border-radius: 50%; background: var(--tint); color: var(--accent); display: grid; place-items: center; }
+.solo.acc .pick { padding: 0 6px 0 10px; }
+.dock-play { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }

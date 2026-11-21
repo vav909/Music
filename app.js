@@ -37,6 +37,22 @@ const S = {
   loop: true, tempo: 100, zoom: 1, step: 1, gap: 0, ramp: false, passes: 0, waiting: false,
   onlyFav: false, instr: '', openId: null,   // openId : solo dont les options sont dépliées
 };
+S.full = (() => { try { return localStorage.getItem('sl-full') === '1'; } catch { return false; } })();   // lecteur complet ou allégé
+/* Icônes dessinées : les symboles ▶ ⏸ ⏹ sont remplacés par des emojis colorés (carré orange) sur Android */
+const svgI = (p, s = 24) => `<svg class="ic" viewBox="0 0 24 24" width="${s}" height="${s}" aria-hidden="true">${p}</svg>`;
+const IC = {
+  play: svgI('<path fill="currentColor" d="M8 5.6v12.8a1 1 0 0 0 1.5.86l10.4-6.4a1 1 0 0 0 0-1.72L9.5 4.74A1 1 0 0 0 8 5.6z"/>', 28),
+  pause: svgI('<rect x="6" y="5" width="4.4" height="14" rx="1.2" fill="currentColor"/><rect x="13.6" y="5" width="4.4" height="14" rx="1.2" fill="currentColor"/>', 28),
+  stop: svgI('<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>', 22),
+  chev: svgI('<path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>', 26),
+};
+/* « + » ou « − » entouré de petits tirets, comme un chrono */
+function chronoIcon(sign) {
+  let t = '';
+  for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6, c = Math.cos(a), s = Math.sin(a); t += `<line x1="${(16 + s * 11.6).toFixed(1)}" y1="${(16 - c * 11.6).toFixed(1)}" x2="${(16 + s * 14.6).toFixed(1)}" y2="${(16 - c * 14.6).toFixed(1)}"/>`; }
+  const mid = '<line x1="10.5" y1="16" x2="21.5" y2="16"/>' + (sign === '+' ? '<line x1="16" y1="10.5" x2="16" y2="21.5"/>' : '');
+  return `<svg class="ic" viewBox="0 0 32 32" width="36" height="36" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">${t}${mid}</g></svg>`;
+}
 const audio = new Audio();
 audio.preload = 'auto';
 let objectUrl = null, raf = 0, wakeLock = null;
@@ -159,20 +175,22 @@ function renderLibrary() {
 function renderSong() {
   const c = $('#content');
   c.innerHTML = `
-  <section class="player">
+  <section class="player${S.full ? ' full' : ''}">
     <div class="tlbox">${timelineHTML()}${timelineTools()}</div>
-    <div class="transport">
-      <button data-act="seek" data-d="-5">« 5 s</button>
-      <button class="big" id="playBtn" data-act="play">▶</button>
-      <button data-act="seek" data-d="5">5 s »</button>
-      <button class="toggle" id="loopBtn" data-act="loop" aria-label="Boucle">↻</button>
+    <div class="ctl">
+      <button class="loop" id="loopBtn" data-act="loop" aria-label="Boucle">↻</button>
+      <button class="seekb" data-act="seek-hold" data-d="-1" aria-label="Reculer d’une seconde (appui long : 5 puis 10 secondes)">${chronoIcon('−')}</button>
+      <button class="big" id="playBtn" data-act="play" aria-label="Lecture"></button>
+      <button class="seekb" data-act="seek-hold" data-d="1" aria-label="Avancer d’une seconde (appui long : 5 puis 10 secondes)">${chronoIcon('+')}</button>
+      <button class="expand" data-act="player-full" aria-expanded="${S.full}" aria-label="Tous les réglages de lecture">${IC.chev}</button>
     </div>
     <div class="tempo">
-      <button data-act="tempo" data-d="-5">−</button>
+      <button class="full-only" data-act="tempo" data-d="-5">−</button>
       <input type="range" id="tempoRange" min="30" max="150" step="10" aria-label="Tempo, de dix en dix">
-      <button data-act="tempo" data-d="5">+</button>
+      <button class="full-only" data-act="tempo" data-d="5">+</button>
+      <b id="tempoLbl"></b>
     </div>
-    <div class="tempo-info"><b id="tempoLbl"></b><button id="resetTempo" data-act="tempo-reset">↺ Tempo original</button></div>
+    <div class="tempo-info"><button id="resetTempo" data-act="tempo-reset">↺ Tempo original</button></div>
   </section>
   <section class="panel" style="padding-bottom:0"><div class="opts">
     <button id="gapBtn" data-act="gap"></button><button id="rampBtn" data-act="ramp"></button></div></section>
@@ -258,20 +276,25 @@ function renderPanel() {
   h += list.length ? list.map(s => { const open = S.openId === s.id;
     return `<div class="solo acc ${s.id === S.soloId ? 'sel' : ''}${open ? ' open' : ''}">
       <div class="solo-head">
-        <button class="pick" data-act="solo-pick" data-solo="${s.id}" aria-label="Jouer ce solo"><i class="dot"></i><span><b>${esc(s.name)}${s.instrument ? ' · ' + esc(s.instrument) : ''}</b><small>${fmt(s.start)} – ${fmt(s.end)} · ${s.tempo}%${s.soloist ? ' · ' + esc(s.soloist) : ''}</small></span></button>
+        <button class="solo-play" data-act="solo-pick" data-solo="${s.id}" aria-label="Jouer ce solo">${IC.play}</button>
+        <button class="pick" data-act="solo-toggle" data-solo="${s.id}" aria-expanded="${open}" aria-label="Champs du solo"><span><b>${esc(s.name)}${s.instrument ? ' · ' + esc(s.instrument) : ''}</b><small>${fmt(s.start)} – ${fmt(s.end)} · ${s.tempo}%${s.soloist ? ' · ' + esc(s.soloist) : ''}</small></span></button>
         <button class="star ${s.fav ? 'on' : ''}" data-act="star" data-solo="${s.id}" aria-label="Favori">${s.fav ? '★' : '☆'}</button>
         ${open ? '' : `<button class="icon-sm" data-act="solo-details" data-solo="${s.id}" aria-label="Détails du solo">${PENCIL}</button>`}
         <button class="icon-sm" data-act="solo-toggle" data-solo="${s.id}" aria-expanded="${open}" aria-label="${open ? 'Replier' : 'Déplier'} les options du solo">${open ? '▴' : '▾'}</button>
       </div>
       ${open ? soloEditor(s) : ''}
     </div>`; }).join('') : `<p class="hint">${song.solos.length ? 'Aucun favori.' : 'Écoute le morceau, puis appuie sur « Nouveau solo » quand un solo commence.'}</p>`;
-  p.innerHTML = h;
+  p.innerHTML = h; syncSoloPlay();
   const act = S.openId && song.solos.find(x => x.id === S.openId);
   if (!act) return;
   const sl = $('#soloSoloist'), n = $('#soloName'), i = $('#soloInstr');
   if (sl) sl.addEventListener('input', () => { act.soloist = sl.value; saveSoon(); });
   if (n) n.addEventListener('input', () => { act.name = n.value; saveSoon(); const b = document.querySelector('.solo.open .pick b'); if (b) b.textContent = act.name + (act.instrument ? ' · ' + act.instrument : ''); });
   if (i) i.addEventListener('input', () => { act.instrument = i.value; saveSoon(); });
+}
+/* L'icône de la ligne du solo en cours suit la lecture (▶ / ⏸) */
+function syncSoloPlay() {
+  document.querySelectorAll('.solo-play').forEach(b => { b.innerHTML = b.dataset.solo === S.soloId && !audio.paused ? IC.pause : IC.play; });
 }
 /* Début / fin / pas affichés dans les options et dans la page des détails */
 function syncEdges() {
@@ -283,9 +306,10 @@ function syncEdges() {
 /* ---------- Lecture ---------- */
 function updateTransport() {
   const pb = $('#playBtn'); if (!pb) return;
-  pb.textContent = (audio.paused && !S.waiting) ? '▶' : '⏸';
+  pb.innerHTML = (audio.paused && !S.waiting) ? IC.play : IC.pause;
   $('#loopBtn').classList.toggle('on', S.loop);
-  $('#tempoRange').value = S.tempo; $('#tempoLbl').textContent = 'Tempo ' + S.tempo + ' %';
+  $('#tempoRange').value = S.tempo; $('#tempoLbl').textContent = S.tempo + ' %';
+  syncSoloPlay();
   $('#resetTempo').disabled = S.tempo === 100;
   const g = $('#gapBtn'), rb = $('#rampBtn');
   if (g) { g.textContent = 'Pause entre passages : ' + (S.gap ? S.gap + ' s' : 'non'); g.classList.toggle('on', S.gap > 0); }
@@ -554,6 +578,26 @@ async function importSolos(file) {
 }
 $('#jsonInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importSolos(f); });
 
+/* ---------- Avance / recul : un appui = 1 s ; en maintenant 2 s, par 5 s ; après 4 s, par 10 s ---------- */
+function seekBy(dt) {
+  if (!S.song) return;
+  audio.currentTime = Math.max(0, Math.min(S.song.duration, audio.currentTime + dt)); updatePlayhead();
+}
+const HOLD = { timer: null };
+function stopHold() { clearTimeout(HOLD.timer); HOLD.timer = null; }
+function startHold(dir) {
+  stopHold(); const t0 = performance.now();
+  seekBy(dir);
+  const step = () => {
+    const held = performance.now() - t0, n = held >= 4000 ? 10 : held >= 2000 ? 5 : 1;
+    seekBy(dir * n); HOLD.timer = setTimeout(step, n === 1 ? 300 : 450);
+  };
+  HOLD.timer = setTimeout(step, 450);
+}
+document.addEventListener('pointerdown', e => { const b = e.target.closest('[data-act=seek-hold]'); if (!b) return; e.preventDefault(); startHold(+b.dataset.d); });
+for (const ev of ['pointerup', 'pointercancel', 'blur']) window.addEventListener(ev, stopHold);
+document.addEventListener('contextmenu', e => { if (e.target.closest('[data-act=seek-hold]')) e.preventDefault(); });
+
 /* ---------- Pédale Bluetooth / clavier ---------- */
 document.addEventListener('keydown', e => {
   if (!S.song || /INPUT|TEXTAREA/.test(e.target.tagName)) return;
@@ -585,6 +629,11 @@ document.addEventListener('click', async e => {
     case 'loop': S.loop = !S.loop; updateTransport(); break;
     case 'tempo': setTempo(S.tempo + +d.d); break;
     case 'tempo-reset': setTempo(100); break;
+    case 'seek-hold': if (e.detail === 0 && S.song) seekBy(+d.d); break;   // clavier / lecteur d'écran ; au doigt, voir les événements pointer
+    case 'player-full': {
+      S.full = !S.full; try { localStorage.setItem('sl-full', S.full ? '1' : '0'); } catch {}
+      const pl = $('.player'); if (pl) pl.classList.toggle('full', S.full); b.setAttribute('aria-expanded', S.full); break;
+    }
     case 'edit-song': openEdit(); break;
     case 'edit-close': closeEdit(); break;
     case 'zoom': S.zoom = Math.max(0, Math.min(ZOOMS.length - 1, S.zoom + +d.d)); drawTimeline(); updatePlayhead(true); break;

@@ -397,7 +397,7 @@ function diagSummary(solo) {
 /* Pictos : croche (lire la transcription) et portée avec une note sur la ligne de sol (réglages de la partition) */
 const ICON_EIGHTH = '<svg class="ic" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><ellipse cx="8" cy="18" rx="4.3" ry="3.2" transform="rotate(-20 8 18)" fill="currentColor"/><path d="M11.8 16.5V3.5l6.6 3.4c1.6 1.6 1.6 4.2-.4 6.6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>';
 const ICON_STAFF = '<svg class="ic" viewBox="0 0 34 26" width="34" height="26" aria-hidden="true"><g stroke="currentColor" stroke-width="1.3"><line x1="2" y1="5" x2="32" y2="5"/><line x1="2" y1="9" x2="32" y2="9"/><line x1="2" y1="13" x2="32" y2="13"/><line x1="2" y1="17" x2="32" y2="17"/><line x1="2" y1="21" x2="32" y2="21"/></g><ellipse cx="17" cy="17" rx="3.9" ry="2.8" transform="rotate(-20 17 17)" fill="currentColor"/><line x1="20.6" y1="16.2" x2="20.6" y2="4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
-const scoreBtn = (stop, label) => (stop ? '⏹' : ICON_EIGHTH) + '<span>' + label + '</span>';
+const scoreBtn = (stop, label) => (stop ? IC.stop : ICON_EIGHTH) + '<span>' + label + '</span>';
 
 /* Page « Détails du solo » : une seule page, des sections repliables (SH.open mémorise celles qui sont dépliées) */
 function sheetHTML(solo) {
@@ -433,7 +433,7 @@ function sheetHTML(solo) {
       </div>
       <div class="dock-bar">
         <button class="dock-btn${SH.dock ? ' on' : ''}" data-act="dock-toggle" aria-expanded="${SH.dock}" aria-label="Réglages de la partition">${ICON_STAFF}</button>
-        <button id="sheetPlay" class="dock-play" data-act="sheet-play">▶ Solo</button>
+        <button id="sheetPlay" class="dock-play" data-act="sheet-play" aria-label="Lire le solo">${IC.play}<span>Solo</span></button>
         <span></span>
       </div>
     </div>`;
@@ -533,7 +533,7 @@ function playScore(mix) {
   }, 40);
   updateScorePlay();
 }
-function updateSheetPlay() { const b = $('#sheetPlay'); if (b) b.textContent = audio.paused ? '▶ Solo' : '⏸ Solo'; }
+function updateSheetPlay() { const b = $('#sheetPlay'); if (b) b.innerHTML = (audio.paused ? IC.play : IC.pause) + '<span>Solo</span>'; }
 audio.addEventListener('play', updateSheetPlay); audio.addEventListener('pause', updateSheetPlay);
 
 async function runAnalysis() {
