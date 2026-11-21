@@ -27,10 +27,9 @@ détection automatique des solos (serveur), changement de tonalité.
 ## Comment modifier l'app et la mettre en ligne
 1. Modifier les fichiers à la racine. Garder l'app sans dépendance ni étape de build.
 2. Tester en vue téléphone (390×844) avec un vrai MP3 (voir `docs/DEPLOIEMENT.md`).
-3. Si un fichier est ajouté ou renommé, mettre à jour la liste `ASSETS` de `sw.js`.
-4. Ne pas modifier le nom du cache dans `sw.js` à la main : le déploiement le change tout seul.
-5. Créer une branche `claude/<sujet>`, commit, push, ouvrir une pull request. Le merge sur `main` met l'app en ligne.
-6. Après le déploiement, rouvrir l'app (deux ouvertures si elle est installée) pour voir la nouvelle version.
+3. `sw.js` charge le réseau d'abord : pas de numéro de version à changer. Si un fichier est ajouté, l'ajouter aussi à `ASSETS`.
+4. Créer une branche `claude/<sujet>`, commit, push, ouvrir une pull request. Le merge sur `main` met l'app en ligne.
+5. Après le déploiement, rouvrir l'app (deux ouvertures si elle est installée) pour voir la nouvelle version.
 
 ## Règles
 - Réponses et textes de l'interface en français.
