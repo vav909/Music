@@ -132,3 +132,16 @@ input.txt { font: inherit; color: var(--text); background: var(--bg); border: 1p
 .nb-row button { flex: 1; min-height: 46px; padding: 0 4px; font-size: 14px; }
 .sheet-exp { display: flex; gap: 8px; padding: 8px 10px; }
 .sheet-exp button { flex: 1; min-height: 46px; }
+
+/* Choix du bon morceau (recherche artiste / pochette) */
+#chooser { position: fixed; inset: 0; z-index: 70; background: #fff; display: flex; flex-direction: column; overflow-y: auto; padding-bottom: env(safe-area-inset-bottom); }
+#chooser[hidden] { display: none !important; }
+.ch-search { display: flex; gap: 8px; padding: 10px 12px 0; }
+.ch-search input { flex: 1; min-height: 44px; }
+.ch-search button { min-height: 44px; padding: 0 14px; }
+.ch-list { display: grid; gap: 8px; padding: 8px 12px 16px; }
+.ch-hit { display: flex; gap: 10px; align-items: center; text-align: left; min-height: 64px; padding: 6px 10px; }
+.ch-hit img { width: 52px; height: 52px; border-radius: 6px; object-fit: cover; background: var(--panel2); flex: none; }
+.ch-hit span { display: grid; gap: 1px; min-width: 0; }
+.ch-hit b, .ch-hit small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-hit small { color: var(--muted); font-size: 13px; }
