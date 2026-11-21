@@ -95,17 +95,46 @@ async function analyzeSolo(song, solo, onProgress) {
   }
   const tOf = f => (f * hop + W / 2) / sr, step = hop / sr, raw = [];
   let cur = null;
-  const close = f => { if (cur) { cur.t1 = tOf(f - 1) + step / 2; if (cur.t1 - cur.t0 >= 0.08) raw.push(cur); cur = null; } };
+  // deux attaques de même hauteur (notes répétées, articulation) ne changent pas la hauteur : on les sépare au creux d'énergie
+  // qui les relie (sous 50 % du plus faible des deux sommets), sans quoi elles fusionnent en une seule note
+  const splitAtDips = (a, b) => {
+    if (b - a < 7) return [[a, b]];
+    const L = new Float32Array(b - a + 1), R = new Float32Array(b - a + 1);
+    for (let k = a, m = 0; k <= b; k++) { m = Math.max(m, rms[k]); L[k - a] = m; }
+    for (let k = b, m = 0; k >= a; k--) { m = Math.max(m, rms[k]); R[k - a] = m; }
+    let best = -1, bestV = 1;
+    for (let k = a + 3; k <= b - 3; k++) {
+      if (rms[k] > rms[k - 1] || rms[k] > rms[k + 1]) continue;
+      const v = rms[k] / Math.min(L[k - a], R[k - a]);
+      if (v < 0.5 && v < bestV) { best = k; bestV = v; }
+    }
+    return best < 0 ? [[a, b]] : [...splitAtDips(a, best - 1), ...splitAtDips(best + 1, b)];
+  };
+  const close = f => {
+    if (!cur) return;
+    for (const [a, b] of splitAtDips(cur.f0, f - 1)) {
+      const t0 = tOf(a) - step / 2, t1 = tOf(b) + step / 2;
+      if (t1 - t0 >= 0.08) raw.push({ t0, t1, m: cur.m, a, b });
+    }
+    cur = null;
+  };
   for (let f = 0; f < nF; f++) {
     const m = midis[f];
     if (m === null) close(f);
     else if (cur && cur.m === m) { /* même note */ }
-    else { close(f); cur = { t0: tOf(f) - step / 2, t1: 0, m }; }
+    else { close(f); cur = { f0: f, m }; }
   }
   close(nF);
-  // fusionne deux morceaux de même hauteur séparés par moins de 40 ms
+  // fusionne deux morceaux de même hauteur séparés par moins de 40 ms, sauf si un creux d'énergie les sépare
+  const dipBetween = (A, B) => {
+    let pl = 0, pr = 0, mn = Infinity;
+    for (let k = Math.max(A.a, A.b - 5); k <= A.b; k++) pl = Math.max(pl, rms[k]);
+    for (let k = B.a; k <= Math.min(B.b, B.a + 5); k++) pr = Math.max(pr, rms[k]);
+    for (let k = Math.max(0, A.b - 1); k <= Math.min(nF - 1, B.a + 1); k++) mn = Math.min(mn, rms[k]);
+    return mn < 0.5 * Math.min(pl, pr);
+  };
   const merged = [];
-  for (const nt of raw) { const l = merged[merged.length - 1]; if (l && l.m === nt.m && nt.t0 - l.t1 < 0.04) l.t1 = nt.t1; else merged.push({ ...nt }); }
+  for (const nt of raw) { const l = merged[merged.length - 1]; if (l && l.m === nt.m && nt.t0 - l.t1 < 0.04 && !dipBetween(l, nt)) { l.t1 = nt.t1; l.b = nt.b; } else merged.push({ ...nt }); }
   // erreurs d'octave : une note à plus de 9 demi-tons de ses voisines, mais proche d'elles une octave plus loin, est ramenée
   let octFix = 0, isolated = 0;
   const med = arr => { const a = arr.filter(v => v !== undefined).sort((p, q) => p - q); return a.length ? a[Math.floor(a.length / 2)] : null; };

@@ -19,11 +19,15 @@ ralentir sans changer la hauteur. Fichiers statiques sans build : `index.html`, 
 Bibliothèque de morceaux (MP3 importés, stockage local), solos nommés avec instrument, soliste et favori, artiste/album/pochette
 (recherche automatique iTunes, sinon saisie), boucle, tempo 25–150 % sans changer la hauteur, montée progressive (+5 % par passage),
 pause avec bips entre deux passages, pédale Bluetooth (espace/↓ lecture, ↑ début du solo), export/import JSON des repères (sans audio),
-partition du solo sélectionné (`score.js` : analyse YIN limitée à la tessiture de l'instrument du solo avec ramenée d'octave, quantification en doubles-croches ou swing (croches droites), tempo estimé ou tapé, affichage SVG, correction note par note, export MIDI/MusicXML, écoute de la partition écrite seule ou avec le solo d'origine, note en cours surlignée), lecture des étiquettes ID3 du MP3 (`tags.js` : titre, artiste, album, pochette), recherche iTunes avec liste de candidats à choisir, bouton « Envoyer un diagnostic » (JSON sans audio : étiquettes, recherche, réglages, notes détectées).
+partition du solo sélectionné (`score.js` : analyse YIN limitée à la tessiture de l'instrument du solo avec ramenée d'octave, notes répétées séparées aux creux d'énergie, quantification en doubles-croches ou swing (croches droites), tempo estimé ou tapé, affichage SVG, correction note par note, export MIDI/MusicXML, écoute de la partition écrite seule ou avec le solo d'origine, note en cours surlignée), lecture des étiquettes ID3 du MP3 (`tags.js` : titre, artiste, album, pochette), recherche iTunes puis MusicBrainz (`meta.js`) : nom de fichier nettoyé (« 26-2 » conservé), candidats classés (mots, artiste, durée du fichier) à choisir, titre modifiable, pochette de la galerie en secours, bouton « Envoyer un diagnostic » (JSON sans audio : étiquettes, recherche, réglages, notes détectées).
 
 ## À faire ensuite
 Détection automatique du swing, Import Drive, import d'une playlist Deezer (titres seulement, puis association aux fichiers), transposition de la partition, partition plus fiable sur piste isolée (serveur),
 détection automatique des solos (serveur), changement de tonalité.
+
+## Tests (Node, sans dépendance)
+`node tests/score.test.js` (notes répétées, attaques, tessiture, sur un signal synthétique `tests/synth.js`), `node tests/meta.test.js` (noms de fichiers, recherche avec réponses simulées),
+`node tests/compare.js [révision]` (avant/après sur le même signal). Le bac à sable bloque iTunes/MusicBrainz : la recherche réelle reste à vérifier sur un téléphone.
 
 ## Comment modifier l'app et la mettre en ligne
 1. Modifier les fichiers à la racine. Garder l'app sans dépendance ni étape de build.

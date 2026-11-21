@@ -82,7 +82,7 @@ async function importFiles(files) {
     try {
       const { duration, peaks } = await analyze(file);
       let tags = null; try { tags = await readTags(file); } catch (e) { console.warn('étiquettes illisibles', e); }
-      const song = { id: uid(), title: (tags && tags.title) || file.name.replace(/\.[^.]+$/, ''), file: file.name, duration, peaks, solos: [], added: Date.now(), tagsRead: true };
+      const song = { id: uid(), title: (tags && tags.title) || Meta.cleanName(file.name).title || file.name.replace(/\.[^.]+$/, ''), file: file.name, duration, peaks, solos: [], added: Date.now(), tagsRead: true };
       if (tags) {
         song.tags = { title: tags.title, artist: tags.artist, album: tags.album, hasCover: !!tags.coverBytes };
         song.artist = tags.artist; song.album = tags.album;
@@ -220,9 +220,10 @@ function renderPanel() {
   const song = S.song, act = curSolo();
   const list = song.solos.filter(s => !S.onlyFav || s.fav).sort((a, b) => a.start - b.start);
   let h = `<div class="meta">${song.cover ? `<img class="cover" src="${esc(song.cover)}" alt="Pochette" onerror="this.outerHTML='<div class=&quot;cover ph&quot;>♪</div>'">` : '<div class="cover ph">♪</div>'}
-    <div class="meta-f"><input class="txt" id="songArtist" value="${esc(song.artist)}" placeholder="Artiste" aria-label="Artiste">
+     <div class="meta-f"><input class="txt" id="songTitle" value="${esc(song.title)}" placeholder="Titre" aria-label="Titre">
+    <input class="txt" id="songArtist" value="${esc(song.artist)}" placeholder="Artiste" aria-label="Artiste">
     <input class="txt" id="songAlbum" value="${esc(song.album)}" placeholder="Album" aria-label="Album">
-    <button data-act="lookup">Trouver artiste et pochette</button><button data-act="diag">Envoyer un diagnostic</button></div></div>`;
+    <button data-act="lookup">Identifier le morceau</button><button data-act="cover-file">Pochette…</button><button data-act="diag">Envoyer un diagnostic</button></div></div>`;
   if (act) {
     h += `<div class="editor">
       <input class="txt" id="soloName" value="${esc(act.name)}" placeholder="Nom du solo" aria-label="Nom du solo">
@@ -242,7 +243,8 @@ function renderPanel() {
       <button class="star ${s.fav ? 'on' : ''}" data-act="star" data-solo="${s.id}" aria-label="Favori">${s.fav ? '★' : '☆'}</button>
     </div>`).join('') : `<p class="hint">${song.solos.length ? 'Aucun favori.' : 'Écoute le morceau, puis appuie sur « Nouveau solo » quand un solo commence.'}</p>`;
   p.innerHTML = h;
-  const sa = $('#songArtist'), sb = $('#songAlbum'), sl = $('#soloSoloist');
+  const st = $('#songTitle'), sa = $('#songArtist'), sb = $('#songAlbum'), sl = $('#soloSoloist');
+  if (st) st.addEventListener('input', () => { song.title = st.value; $('#title').textContent = song.title || 'Sans titre'; saveSoon(); });
   if (sa) sa.addEventListener('input', () => { song.artist = sa.value; saveSoon(); });
   if (sb) sb.addEventListener('input', () => { song.album = sb.value; saveSoon(); });
   if (sl) sl.addEventListener('input', () => { act.soloist = sl.value; saveSoon(); });
@@ -380,7 +382,7 @@ function editEdge(w, newT) {
 }
 
 /* ---------- Artiste, album, pochette (recherche automatique, saisie manuelle en secours) ---------- */
-const cleanTerm = t => String(t || '').replace(/^\s*\d+[\s._-]+/, '').replace(/_+/g, ' ').replace(/\([^)]*\)|\[[^\]]*\]/g, ' ').replace(/\s+/g, ' ').trim();
+const cleanTerm = t => Meta.cleanName(t, true).title;   // garde « 26-2 », retire numéro de piste, remaster, feat, année
 // étiquettes du fichier (titre, artiste, album, pochette) lues une fois pour les morceaux déjà importés
 async function applyFileTags(song) {
   if (song.tagsRead) return false;
@@ -395,39 +397,28 @@ async function applyFileTags(song) {
   if (tags.coverBytes && !song.cover) { song.cover = await coverToDataUrl(tags.coverBytes, tags.coverMime); got = !!song.cover || got; }
   saveSoon(); return got;
 }
-async function itunesSearch(term) {
-  const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 8000);
-  try {
-    const res = await fetch('https://itunes.apple.com/search?media=music&entity=song&limit=12&term=' + encodeURIComponent(term), { signal: ctl.signal });
-    return (await res.json()).results || [];
-  } finally { clearTimeout(to); }
-}
-function rankHits(hits, song) {
-  const core = norm(cleanTerm((song.tags && song.tags.title) || song.title)), art = norm(song.artist), live = /live|concert/i.test(song.title);
-  const sc = h => (core && (norm(h.trackName).includes(core) || core.includes(norm(h.trackName))) ? 3 : 0)
-    + (art && norm(h.artistName).includes(art) ? 2 : 0) + (live === /live|concert/i.test(h.trackName + ' ' + h.collectionName) ? 1 : 0);
-  return hits.map((h, i) => [h, i]).sort((a, b) => sc(b[0]) - sc(a[0]) || a[1] - b[1]).map(x => x[0]);
-}
 const CH = { hits: [], term: '', busy: false };
 function renderChooser(msg) {
   const el = $('#chooser'); el.hidden = false; document.body.style.overflow = 'hidden';
   el.innerHTML = `<div class="sheet-top"><button class="icon-btn" data-act="ch-close" aria-label="Fermer">←</button><b>Choisir le bon morceau</b></div>
     <div class="ch-search"><input class="txt" id="chTerm" value="${esc(CH.term)}" placeholder="Artiste et titre" aria-label="Recherche"><button data-act="ch-search">Chercher</button></div>
-    <p class="hint">${esc(msg || 'Touche la bonne ligne : artiste, album et pochette seront repris. Tu peux corriger la recherche.')}</p>
+    <p class="hint">${esc(msg || 'Touche la bonne ligne : titre, artiste, album et pochette seront repris. Vérifie l’album et la durée. Tu peux corriger la recherche.')}</p>
     <div class="ch-list">${CH.hits.map((h, i) => `<button class="ch-hit" data-act="ch-pick" data-i="${i}">
-      <img src="${esc(h.artworkUrl100 || '')}" alt="" onerror="this.style.visibility='hidden'"><span><b>${esc(h.trackName)}</b><small>${esc(h.artistName)}</small><small>${esc(h.collectionName || '')}${h.releaseDate ? ' · ' + esc(h.releaseDate.slice(0, 4)) : ''}</small></span></button>`).join('')}</div>`;
+      <img src="${esc(h.thumb || '')}" alt="" onerror="this.style.visibility='hidden'"><span><b>${esc(h.title)}</b><small>${esc(h.artist)}</small><small>${esc(h.album || '')}${h.year ? ' · ' + esc(h.year) : ''}${h.duration ? ' · ' + fmt(h.duration) : ''}${h.sameLength ? ' · même durée' : ''} · ${esc(h.source)}</small></span></button>`).join('')}</div>`;
   const inp = $('#chTerm'); if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); chSearch(inp.value); } });
 }
 function closeChooser() { $('#chooser').hidden = true; if ($('#sheet').hidden) document.body.style.overflow = ''; }
-async function chSearch(term) {
+/* auto : recherche à partir du titre / nom de fichier / artiste ; sinon les mots saisis, tels quels */
+async function chSearch(term, auto) {
   const song = S.song; if (!song || CH.busy) return;
-  CH.busy = true; CH.term = term;
+  CH.busy = true; CH.term = term; CH.hits = []; renderChooser('Recherche en cours…');
   try {
-    const hits = rankHits(await itunesSearch(term), song);
-    CH.hits = hits;
-    song.lookupLog = { term, at: new Date().toISOString(), n: hits.length, top: hits.slice(0, 5).map(h => ({ track: h.trackName, artist: h.artistName, album: h.collectionName })) };
+    const r = await Meta.searchAll({ title: (song.tags && song.tags.title) || song.title, artist: song.artist, album: song.album, file: song.file || song.title, duration: song.duration, query: auto ? '' : term });
+    CH.hits = r.candidates; if (auto && r.queries[0]) CH.term = r.queries[0].text;
+    song.lookupLog = { term: CH.term, at: new Date().toISOString(), n: r.candidates.length, errors: r.errors, top: r.candidates.slice(0, 5).map(h => ({ source: h.source, track: h.title, artist: h.artist, album: h.album, score: h.score })) };
     saveSoon();
-    renderChooser(hits.length ? '' : 'Rien trouvé : change les mots de la recherche, ou ferme et saisis à la main.');
+    const down = r.errors.length >= 2;
+    renderChooser(r.candidates.length ? '' : down ? 'Recherche impossible (hors ligne ou service indisponible). Ferme et saisis à la main.' : 'Rien trouvé : change les mots de la recherche, ou ferme et saisis à la main.');
   } catch (e) {
     song.lookupLog = { term, at: new Date().toISOString(), error: String(e && e.message || e) }; saveSoon();
     renderChooser('Recherche impossible (hors ligne ?). Ferme et saisis l’artiste et l’album à la main.');
@@ -436,20 +427,27 @@ async function chSearch(term) {
 }
 async function lookup() {
   const song = S.song; if (!song) return;
-  toast('Recherche en cours…');
   let got = false; try { got = await applyFileTags(song); } catch (e) { console.warn(e); }
   if (got) { renderPanel(); toast('Infos lues dans le fichier MP3'); }
-  const term = [song.artist, cleanTerm((song.tags && song.tags.title) || song.title)].filter(Boolean).join(' ');
-  CH.hits = []; CH.term = term; renderChooser('Recherche en cours…');
-  await chSearch(term);
+  CH.hits = []; CH.term = '';
+  await chSearch('', true);
 }
-function pickHit(i) {
+async function pickHit(i) {
   const song = S.song, h = CH.hits[i]; if (!song || !h) return;
-  song.artist = h.artistName || song.artist; song.album = h.collectionName || song.album;
-  if (h.artworkUrl100) song.cover = h.artworkUrl100.replace('100x100bb', '600x600bb');
-  if (song.lookupLog) song.lookupLog.chosen = { track: h.trackName, artist: h.artistName, album: h.collectionName };
-  saveSoon(); closeChooser(); renderPanel(); toast('Artiste, album et pochette mis à jour');
+  song.title = h.title || song.title; song.artist = h.artist || song.artist; song.album = h.album || song.album;
+  if (song.lookupLog) song.lookupLog.chosen = { source: h.source, track: h.title, artist: h.artist, album: h.album };
+  saveSongNow(song); closeChooser(); $('#title').textContent = song.title; renderPanel(); toast('Titre, artiste et album mis à jour');
+  if (!h.cover) return;
+  try { song.cover = await Meta.coverToDataURL(h.cover); }                  // copie réduite, disponible hors ligne
+  catch { song.cover = h.cover; }                                            // service sans CORS : on garde l’adresse
+  await saveSongNow(song); if (S.song === song) renderPanel();
 }
+async function setCoverFile(file) {
+  const song = S.song; if (!song || !file) return;
+  try { song.cover = await Meta.coverToDataURL(file); await saveSongNow(song); if (S.song === song) renderPanel(); toast('Pochette enregistrée'); }
+  catch { toast('Image illisible'); }
+}
+$('#coverInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) setCoverFile(f); });
 
 /* ---------- Diagnostic : un petit fichier (sans audio) à m'envoyer pour comprendre les erreurs ---------- */
 async function diagnostic() {
@@ -473,7 +471,7 @@ async function diagnostic() {
 const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
 function exportSolos() {
   const songs = S.songs.filter(sg => sg.solos.length).map(sg => ({
-    title: sg.title, artist: sg.artist || '', album: sg.album || '',
+    title: sg.title, file: sg.file || '', artist: sg.artist || '', album: sg.album || '',
     solos: sg.solos.map(({ name, instrument, soloist, start, end, tempo, fav, score }) => ({ name, instrument, soloist: soloist || '', start, end, tempo, fav, score })),
   }));
   if (!songs.length) { toast('Aucun solo à partager pour l\u2019instant'); return; }
@@ -488,7 +486,7 @@ async function importSolos(file) {
     const data = JSON.parse(await file.text());
     if (data.app !== 'solo-looper' || !Array.isArray(data.songs)) throw new Error('format');
     for (const it of data.songs) {
-      const sg = S.songs.find(x => norm(x.title) === norm(it.title));
+      const sg = S.songs.find(x => norm(x.title) === norm(it.title) || (it.file && x.file && norm(x.file) === norm(it.file)));
       if (!sg) { skipped += it.solos.length; continue; }
       sg.artist = sg.artist || it.artist; sg.album = sg.album || it.album;
       for (const so of it.solos) {
@@ -547,9 +545,10 @@ document.addEventListener('click', async e => {
     case 'gap': ensureBeep(); S.gap = [0, 1, 2, 4][([0, 1, 2, 4].indexOf(S.gap) + 1) % 4]; updateTransport(); break;
     case 'ramp': S.ramp = !S.ramp; S.passes = 0; if (S.ramp && S.tempo >= 100) setTempo(60, false); updateTransport(); break;
     case 'lookup': lookup(); break;
+    case 'cover-file': $('#coverInput').click(); break;
     case 'diag': diagnostic(); break;
     case 'ch-close': closeChooser(); break;
-    case 'ch-search': { const i = $('#chTerm'); if (i) chSearch(i.value); break; }
+    case 'ch-search': { const i = $('#chTerm'); if (i) chSearch(i.value.trim()); break; }
     case 'ch-pick': pickHit(+d.i); break;
     case 'export': exportSolos(); break;
     case 'import': $('#jsonInput').click(); break;
