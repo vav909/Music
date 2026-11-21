@@ -32,11 +32,17 @@ function rangeFor(instr) {
   const r = RANGES.find(x => x[0].test(t));
   return r ? { label: r[1], lo: r[2], hi: r[3], known: true } : { label: instr ? instr : 'instrument inconnu', lo: 48, hi: 96, known: false };
 }
+/* Plage d'analyse du solo : réglée à la main (solo.range = { lo, hi }) ou déduite de l'instrument. */
+function soloRange(solo) {
+  const r = solo && solo.range;
+  if (r && isFinite(r.lo) && isFinite(r.hi)) { const lo = clampN(Math.round(r.lo), 24, 100), hi = clampN(Math.round(r.hi), lo + 6, 108); return { label: 'réglée à la main', lo, hi, known: true, manual: true }; }
+  return rangeFor(solo && solo.instrument);
+}
 const NOTE_FR = ['do', 'do♯', 'ré', 'ré♯', 'mi', 'fa', 'fa♯', 'sol', 'sol♯', 'la', 'la♯', 'si'];
 const noteFr = m => NOTE_FR[m % 12] + (Math.floor(m / 12) - 1);
 
 /* ---------- Suivi de la hauteur : parmi les candidats de chaque image, le chemin de moindre coût ---------- */
-const TRACK = { cmax: 0.6, uv: 0.45, jump: 0.025, switch: 0.05, near: 0.1, sub: 0.2 };
+const TRACK = { cmax: 0.6, uv: 0.45, jump: 0.025, switch: 0.05, near: 0.1, sub: 0.2, sky: 0.3 };
 function trackPitch(cands) {
   const n = cands.length, path = new Int8Array(n).fill(-1);
   let prev = [{ cost: 0, from: -1, p: null }];                 // état 0 = pas de hauteur ; états suivants = candidats
@@ -71,7 +77,7 @@ async function analyzeSolo(song, solo, onProgress) {
   const n = i1 - i0, x = new Float32Array(n);
   for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) x[i] += d[i0 + i] / buf.numberOfChannels; }
 
-  const rg = rangeFor(solo.instrument), fOf = m => 440 * Math.pow(2, (m - 69) / 12);
+  const rg = soloRange(solo), fOf = m => 440 * Math.pow(2, (m - 69) / 12);
   // dans un mélange (basse, piano, batterie), les graves masquent le soliste : on les coupe (filtre passe-haut 4e ordre)
   // juste sous la plus basse note de l'instrument, puis on ne cherche que des hauteurs DANS la tessiture
   const hp = fc => { const w = 2 * Math.PI * fc / sr, cs = Math.cos(w), al = Math.sin(w) / (2 * 0.7071), a0 = 1 + al;
@@ -111,6 +117,12 @@ async function analyzeSolo(song, solo, onProgress) {
     // dès qu'un creux à la période entière est presque aussi net, comme le faisait la règle « premier creux »
     for (const a of list) for (let k = 2; k <= 8; k++) {
       if (list.some(b => b !== a && Math.abs(b.p - (a.p + 12 * Math.log2(k))) < 0.6 && b.c < a.c + TRACK.near)) { a.c += TRACK.sub; break; }
+    }
+    // « voix la plus aiguë » : dans un mélange, la basse et le piano sont plus graves que le soliste ; un candidat net est pénalisé
+    // d'autant qu'il est plus bas qu'un autre candidat net de la même image
+    if (solo.top && list.length) {
+      let pm = -1; for (const a of list) if (a.c < 0.4 && a.p > pm) pm = a.p;
+      if (pm > 0) for (const a of list) a.c += TRACK.sky * Math.max(0, pm - a.p) / 12;
     }
     if (list.length) cands[f] = list.sort((p, q) => p.c - q.c).slice(0, 4);
   }
@@ -386,6 +398,7 @@ function sheetHTML(solo) {
     </div>
     <div class="sheet-ctl"><button data-act="tap">Taper le tempo</button><button data-act="swing">Rythme : ${sc && sc.swing ? 'swing' : 'droit'}</button></div>
     <p class="hint" id="rangeInfo">${rangeInfo(solo)}</p>
+    ${rangeControls(solo)}
     <div class="sheet-ctl"><button data-act="score-play" id="spBtn">${PL.on && !PL.mix ? '⏹ Arrêter' : '▶ Écouter la partition'}</button><button data-act="score-play" data-mix="1" id="spMix">${PL.on && PL.mix ? '⏹ Arrêter' : '▶ Avec le solo'}</button></div>
     <div id="scoreWrap">${sc ? '' : '<p class="hint" id="scMsg">Analyse du solo…</p>'}</div>
     <div id="noteBar"></div>
@@ -393,11 +406,22 @@ function sheetHTML(solo) {
     <div class="sheet-exp"><button data-act="diag">Envoyer un diagnostic</button></div>
     <p class="hint">Brouillon automatique : touche une note pour l’écouter et la corriger. Le tempo se règle à l’oreille (÷2 / ×2 si le rythme est doublé ou divisé).</p>`;
 }
+function rangeControls(solo) {
+  const r = soloRange(solo), opts = sel => { let o = ''; for (let m = 36; m <= 100; m++) o += `<option value="${m}"${m === sel ? ' selected' : ''}>${noteFr(m)}</option>`; return o; };
+  return `<div class="sheet-ctl"><span class="lbl">Notes cherchées</span><select id="rgLo" aria-label="Note la plus grave du soliste">${opts(r.lo)}</select><span class="lbl">à</span><select id="rgHi" aria-label="Note la plus aiguë du soliste">${opts(r.hi)}</select>
+    <button data-act="rg-auto"${r.manual ? '' : ' disabled'}>Auto</button><button data-act="rg-top" class="${solo.top ? 'on' : ''}">Voix aiguë : ${solo.top ? 'oui' : 'non'}</button></div>`;
+}
 function rangeInfo(solo) {
-  const r = rangeFor(solo.instrument);
+  const r = soloRange(solo);
   const d = solo.score && solo.score.diag;
-  let t = r.known ? `Tessiture utilisée : ${noteFr(r.lo)} – ${noteFr(r.hi)} (${esc(r.label)}). Change l’instrument du solo pour la modifier.`
+  let t = r.manual ? `Tessiture réglée à la main : ${noteFr(r.lo)} – ${noteFr(r.hi)}.`
+    : r.known ? `Tessiture utilisée : ${noteFr(r.lo)} – ${noteFr(r.hi)} (${esc(r.label)}). Change l’instrument du solo pour la modifier.`
     : 'Instrument non reconnu : tessiture large (do3 – do7). Indique l’instrument du soliste (flûte, sax, trompette, piano…) pour de meilleurs résultats.';
+  const sc = solo.score, ms = sc && sc.raw ? sc.raw.map(n => n.m).sort((a, b) => a - b) : [];
+  if (ms.length >= 8 && !r.manual) {
+    const med = ms[ms.length >> 1];
+    if (med < r.lo + 0.4 * (r.hi - r.lo)) t += ` La plupart des notes trouvées sont graves (autour de ${noteFr(med)}) : ce peut être la basse ou le piano plutôt que le soliste. Si la flûte joue plus haut, monte la note la plus grave ci-dessous, ou active « Voix aiguë ».`;
+  }
   if (d && d.loud) {
     const vr = Math.round(100 * d.voiced / d.loud), oo = Math.round(100 * d.outside / d.loud);
     if (vr < 40) t += ` Attention : le soliste n’est reconnu que dans ${vr} % du passage (accompagnement trop présent) : la partition sera très incomplète.`;
@@ -574,6 +598,8 @@ document.addEventListener('click', e => {
     case 'bpm-mul': changeBpm(sc.bpm * +d.f); break;
     case 'acc': if (sc) { sc.flats = !sc.flats; saveSoon(); $('#sheet').innerHTML = sheetHTML(curSolo()); drawSheet(); updateSheetPlay(); } break;
     case 'zoom-score': SH.bars = SH.bars === 1 ? 2 : SH.bars === 2 ? 3 : 1; $('#sheet').innerHTML = sheetHTML(curSolo()); drawSheet(); updateSheetPlay(); break;
+    case 'rg-auto': if (sc && sc.edited && !confirm('Changer la tessiture refait la partition et efface tes corrections. Continuer ?')) break; { const so = curSolo(); if (so) { delete so.range; saveSoon(); runAnalysis(); } } break;
+    case 'rg-top': if (sc && sc.edited && !confirm('Changer ce réglage refait la partition et efface tes corrections. Continuer ?')) break; { const so = curSolo(); if (so) { so.top = !so.top; saveSoon(); runAnalysis(); } } break;
     case 'reanalyze': if (!sc || !sc.edited || confirm('Réanalyser efface tes corrections. Continuer ?')) runAnalysis(); break;
     case 'exp-midi': if (sc) exportMidi(); break;
     case 'exp-xml': if (sc) exportXml(); break;
@@ -592,4 +618,13 @@ document.addEventListener('click', e => {
       s.notes.splice(SH.sel + 1, 0, { p, l, m: n.m }); SH.sel++; }); break;
     case 'n-del': edit(s => { s.notes.splice(SH.sel, 1); SH.sel = null; }); break;
   }
+});
+/* Tessiture réglée à la main : la note la plus grave relève aussi le filtre passe-haut (coupe les harmoniques de la basse). */
+document.addEventListener('change', e => {
+  const id = e.target.id; if (id !== 'rgLo' && id !== 'rgHi') return;
+  const so = curSolo(), sc = so && so.score; if (!so) return;
+  if (sc && sc.edited && !confirm('Changer la tessiture refait la partition et efface tes corrections. Continuer ?')) { $('#sheet').innerHTML = sheetHTML(so); drawSheet(); updateSheetPlay(); return; }
+  let lo = +$('#rgLo').value, hi = +$('#rgHi').value;
+  if (hi < lo + 6) { toast('La plage doit couvrir au moins une quarte'); $('#sheet').innerHTML = sheetHTML(so); drawSheet(); updateSheetPlay(); return; }
+  so.range = { lo, hi }; saveSoon(); runAnalysis();
 });

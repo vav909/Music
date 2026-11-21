@@ -116,6 +116,7 @@ input.txt { font: inherit; color: var(--text); background: var(--bg); border: 1p
 .cta2 { width: 100%; min-height: 52px; background: var(--accent); color: var(--accent-ink); font-weight: 650; }
 #sheet { position: fixed; inset: 0; z-index: 60; background: #fff; display: flex; flex-direction: column; overflow-y: auto; padding-bottom: env(safe-area-inset-bottom); }
 #sheet[hidden] { display: none !important; }
+#sheet > * { flex: none; }   /* sans cela, la partition est écrasée sous les boutons quand la fenêtre est haute */
 .sheet-top { display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top) + 6px) 10px 6px; min-height: 60px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
 .sheet-top b { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet-top #sheetPlay { background: var(--accent); color: var(--accent-ink); font-weight: 650; }
@@ -149,3 +150,8 @@ input.txt { font: inherit; color: var(--text); background: var(--bg); border: 1p
 /* note en cours d'écoute dans la partition */
 #scoreWrap .playing :not(.hit)[fill]:not([fill="none"]) { fill: var(--accent) !important; }
 #scoreWrap .playing [stroke]:not([stroke="none"]) { stroke: var(--accent) !important; }
+
+/* Partition : tessiture réglable */
+.sheet-ctl select { min-height: 44px; font: inherit; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 0 6px; }
+.sheet-ctl button.on { background: var(--accent); color: var(--accent-ink); font-weight: 650; }
+.sheet-ctl button:disabled { opacity: .45; }
