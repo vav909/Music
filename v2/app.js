@@ -56,6 +56,9 @@ const IC = {
   target: svgI('<circle cx="12" cy="12" r="5.5"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>', 18),
   up: svgI('<path d="M12 19V5M6 11l6-6 6 6"/>', 18),
   down: svgI('<path d="M12 5v14M6 13l6 6 6-6"/>', 18),
+  rew: svgI('<path d="M12 6l-6 6 6 6M19 6l-6 6 6 6"/>', 26),
+  fwd: svgI('<path d="M12 6l6 6-6 6M5 6l6 6-6 6"/>', 26),
+  reanalyze: svgI('<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"/><circle cx="10.6" cy="15" r="1.6"/><path d="M12.2 15V9.4l2.6 1.1"/>', 26),
   star: on => svgI('<path d="M12 4.2l2.4 5 5.4.7-4 3.8 1 5.4L12 16.5l-4.8 2.6 1-5.4-4-3.8 5.4-.7z"' + (on ? ' fill="currentColor"' : '') + '/>', 24),
 };
 /* « + » ou « − » entouré de petits tirets, comme un chrono */
@@ -132,7 +135,7 @@ async function importFiles(files) {
 /* En-tête du morceau : pochette, titre, artiste · album ; le crayon à droite ouvre la modification. */
 function updateHeader() {
   const song = S.song, t = $('#title');
-  t.classList.toggle('song', !!song);
+  t.classList.toggle('is-song', !!song);
   if (!song) { t.textContent = 'Solo Looper v2'; return; }
   const sub = [song.artist, song.album].filter(Boolean).join(' · ');
   t.innerHTML = `<span class="hd">${song.cover ? `<img class="hd-cover" src="${esc(song.cover)}" alt="Pochette" onerror="this.outerHTML='<span class=&quot;hd-cover ph&quot;>♪</span>'">` : '<span class="hd-cover ph">♪</span>'}<span class="hd-t"><b>${esc(song.title || 'Sans titre')}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span></span>`;
@@ -186,29 +189,43 @@ function renderLibrary() {
 /* ---------- Vue morceau ---------- */
 function renderSong() {
   const c = $('#content');
-  c.innerHTML = `
-  <section class="player${S.full ? ' full' : ''}">
-    <div class="tlbox">${timelineHTML()}${timelineTools()}</div>
-    <div class="ctl">
-      <button class="loop" id="loopBtn" data-act="loop" aria-label="Boucle">${IC.loop}</button>
-      <button class="seekb" data-act="seek-hold" data-d="-1" aria-label="Reculer d’une seconde (appui long : 5 puis 10 secondes)">${chronoIcon('−')}</button>
-      <button class="big" id="playBtn" data-act="play" aria-label="Lecture"></button>
-      <button class="seekb" data-act="seek-hold" data-d="1" aria-label="Avancer d’une seconde (appui long : 5 puis 10 secondes)">${chronoIcon('+')}</button>
-      <button class="expand" data-act="player-full" aria-expanded="${S.full}" aria-label="Tous les réglages de lecture">${IC.chev}</button>
-    </div>
-    <div class="tempo">
-      <button class="full-only" data-act="tempo" data-d="-5" aria-label="Tempo moins 5 pour cent">${IC.minus}</button>
-      <input type="range" id="tempoRange" min="30" max="150" step="10" aria-label="Tempo, de dix en dix">
-      <button class="full-only" data-act="tempo" data-d="5" aria-label="Tempo plus 5 pour cent">${IC.plus}</button>
-      <b id="tempoLbl"></b>
-    </div>
-    <div class="tempo-info"><button id="resetTempo" data-act="tempo-reset">${IC.reset} Tempo original</button></div>
-    <div class="opts"><button id="gapBtn" data-act="gap"></button><button id="rampBtn" data-act="ramp"></button></div>
-  </section>
-  <section class="panel" id="soloPanel"></section>`;
-  mountTimeline($('.player .tlbox'));
-  $('#tempoRange').addEventListener('input', e => setTempo(+e.target.value));
+  c.innerHTML = playerHTML() + `<section class="list" id="soloPanel"></section>
+    <button class="fab" data-act="solo-new" aria-label="Nouveau solo à partir d’ici">${IC.plus}</button>`;
+  mountPlayer($('.player'));
   drawTimeline(); renderPanel(); updateTransport(); updatePlayhead(true);
+}
+
+/* Lecteur, sur la page du morceau et dans les détails du solo :
+   réduit = bande du son, boucle / reculer / lecture / avancer, tempo ; complet = + temps, zoom, début / fin du solo, pas, montée progressive */
+function playerHTML() {
+  const edge = w => { const n = w === 'start' ? 'Début' : 'Fin'; return `<div class="pl-edge"><span class="lbl">${n}</span><b data-edge="${w}">0:00.0</b><span class="sp"></span>
+      <button class="pl-sq" data-act="nudge" data-w="${w}" data-d="-1" aria-label="${n} moins">${IC.minus}</button>
+      <button class="pl-sq" data-act="nudge" data-w="${w}" data-d="1" aria-label="${n} plus">${IC.plus}</button>
+      <button class="pl-sq here" data-act="here" data-w="${w}" aria-label="${n} : prendre la position de lecture">${IC.target}</button></div>`; };
+  return `<section class="player${S.full ? ' full' : ''}">
+    <div class="tlbox">${timelineTools()}${timelineHTML()}</div>
+    <div class="pl-ctl">
+      <button class="pl-loop" data-act="loop" aria-label="Boucle">${IC.loop}</button>
+      <button class="pl-seek" data-act="seek-hold" data-d="-1" aria-label="Reculer d’une seconde (appui long : 5 puis 10 secondes)">${IC.rew}</button>
+      <button class="pl-play" data-act="play" aria-label="Lecture"></button>
+      <button class="pl-seek" data-act="seek-hold" data-d="1" aria-label="Avancer d’une seconde (appui long : 5 puis 10 secondes)">${IC.fwd}</button>
+      <button class="pl-expand" data-act="player-full" aria-expanded="${S.full}" aria-label="Plus de réglages">${IC.chevUp}</button>
+    </div>
+    <div class="pl-tempo-row">
+      <button class="pl-sq" data-act="tempo" data-d="-5" aria-label="Tempo moins 5 pour cent">${IC.minus}</button>
+      <div class="pl-slider"><button class="pl-tlbl" data-act="tempo-reset" aria-label="Tempo : toucher pour revenir à 100 %"></button>
+        <input class="pl-tempo" type="range" min="30" max="150" step="10" aria-label="Tempo, de dix en dix"></div>
+      <button class="pl-sq" data-act="tempo" data-d="5" aria-label="Tempo plus 5 pour cent">${IC.plus}</button>
+      <button class="pl-sq pl-gap" data-act="gap" aria-label="Pause entre passages"><i></i><span>0s</span><i></i></button>
+    </div>
+    <div class="pl-edges">${edge('start')}${edge('end')}</div>
+    <div class="pl-more"><button data-act="step" data-step>Pas : 1 s</button><button class="pl-ramp" data-act="ramp">Montée progressive : non</button></div>
+  </section>`;
+}
+function mountPlayer(root) {
+  if (!root) return;
+  mountTimeline(root.querySelector('.tlbox'));
+  root.querySelector('.pl-tempo').addEventListener('input', e => setTempo(+e.target.value));
 }
 
 /* La timeline existe à deux endroits (page du morceau, détails du solo) : chaque exemplaire se dessine et suit la lecture. */
@@ -233,57 +250,54 @@ function drawTimeline() { if (S.song) for (const tl of liveTimelines()) drawOneT
 function drawOneTimeline(tl) {
   const cv = tl.cv; if (!cv) return;
   const song = S.song, dur = song.duration, per = spb();
-  const nBars = Math.ceil(dur / per), W = nBars * SLOT, H = 104, LBL = 16;
-  const inner = tl.inner; inner.style.width = W + 'px';
+  const pl = tl.root.closest('.player'), full = !pl || pl.classList.contains('full');   // bande fine (réduit) ou grande forme d'onde (complet)
+  const nBars = Math.ceil(dur / per), W = nBars * SLOT, H = full ? 104 : 36, LBL = full ? 16 : 0;
+  const inner = tl.inner; inner.style.width = W + 'px'; inner.style.height = H + 'px';
   const dpr = Math.min(window.devicePixelRatio || 1, 16000 / W);
   cv.width = Math.ceil(W * dpr); cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
   const g = cv.getContext('2d'); g.scale(dpr, dpr);
   const solos = song.solos, act = curSolo();
   // fond du solo sélectionné
   if (act) {
-    g.fillStyle = 'rgba(31,111,235,.10)';
+    g.fillStyle = '#e5e5f0';
     g.fillRect(act.start / per * SLOT, 0, (act.end - act.start) / per * SLOT, H);
-    g.fillStyle = '#1f6feb';
+    g.fillStyle = '#636487';
     g.fillRect(act.start / per * SLOT - 1, 0, 3, H); g.fillRect(act.end / per * SLOT - 2, 0, 3, H);
   }
-  const mid = (H - LBL) / 2, maxH = H - LBL - 12, per2 = PEAK_STEP;
+  const mid = (H - LBL) / 2, maxH = full ? H - LBL - 12 : H - 8, per2 = PEAK_STEP;
   for (let i = 0; i < nBars; i++) {
     const t0 = i * per, t1 = t0 + per;
     let p = 0;
     for (let k = Math.floor(t0 / per2); k < Math.max(Math.floor(t0 / per2) + 1, Math.ceil(t1 / per2)); k++) p = Math.max(p, song.peaks[k] || 0);
     const h = Math.max(4, p * maxH), tm = t0 + per / 2;
     const inSolo = solos.find(s => tm >= s.start && tm <= s.end);
-    g.fillStyle = inSolo ? (inSolo === act ? '#1f6feb' : '#6aa5ee') : '#a9cdf7';
+    g.fillStyle = inSolo ? (inSolo === act ? '#636487' : '#d3ae80') : '#e3c5a2';
     const x = i * SLOT + (SLOT - BAR_W) / 2, y = mid - h / 2;
     g.fillRect(x, y, BAR_W, h);
   }
   // repères de temps
   const stepS = [5, 10, 15, 30, 60, 120, 300].find(s => s / per * SLOT >= 56) || 300;
-  g.fillStyle = '#6b7686'; g.font = '11px system-ui'; g.textBaseline = 'bottom';
-  for (let t = 0; t < dur; t += stepS) g.fillText(fmt(t), t / per * SLOT + 3, H - 2);
+  g.fillStyle = '#98836a'; g.font = '11px system-ui'; g.textBaseline = 'bottom';
+  if (full) for (let t = 0; t < dur; t += stepS) g.fillText(fmt(t), t / per * SLOT + 3, H - 2);
 }
 
 const PENCIL = IC.pencil;
-/* Options d'un solo (nom, instrument, soliste, plage) : dépliées sous la ligne du solo */
+/* Champs d'un solo : dépliés sous sa carte (le début et la fin se règlent dans le lecteur complet) */
 function soloEditor(act) {
   return `<div class="editor">
       <input class="txt" id="soloName" value="${esc(act.name)}" placeholder="Nom du solo" aria-label="Nom du solo">
       <input class="txt" id="soloInstr" list="instrs" value="${esc(act.instrument)}" placeholder="Instrument (flûte, sax…)" aria-label="Instrument">
       <input class="txt" id="soloSoloist" value="${esc(act.soloist)}" placeholder="Soliste (ex. Miles Davis)" aria-label="Soliste">
-      ${['start', 'end'].map(w => `<div class="edrow"><span class="lbl">${w === 'start' ? 'Début' : 'Fin'}</span><b data-edge="${w}">${fmt(act[w], true)}</b>
-        <button data-act="nudge" data-w="${w}" data-d="-1" aria-label="Moins">${IC.minus}</button><button data-act="nudge" data-w="${w}" data-d="1" aria-label="Plus">${IC.plus}</button>
-        <button class="here" data-act="here" data-w="${w}">${IC.target} ici</button></div>`).join('')}
-      <button class="cta2" data-act="sheet-open">Détails du solo<small>Partition · transcription · lecture · plage</small></button>
-      <div class="edrow2"><button data-act="step" data-step>Pas : ${S.step} s</button><button class="danger" data-act="solo-del">Supprimer</button></div>
+      <button class="cta2" data-act="sheet-open">Détails du solo<small>Transcription · lecture · plage</small></button>
+      <button class="del" data-act="solo-del">Supprimer ce solo</button>
     </div>`;
 }
 function renderPanel() {
   const p = $('#soloPanel'); if (!p) return;
   const song = S.song;
   const list = song.solos.filter(s => !S.onlyFav || s.fav).sort((a, b) => a.start - b.start);
-  let h = `<button class="newsolo" data-act="solo-new">${IC.plus} Nouveau solo à partir d'ici</button>
-    <h2>Solos de ce morceau <button class="chip ${S.onlyFav ? 'on' : ''}" style="min-height:36px;float:right" data-act="fav-filter" aria-label="Favoris seulement">${IC.star(S.onlyFav)}</button></h2>`;
-  // une ligne : toucher = jouer la plage ; ▾ = options ; crayon (ligne repliée) = page des détails
+  let h = `<div class="list-title"><b>Mes solos</b><button class="fav-btn${S.onlyFav ? ' on' : ''}" data-act="fav-filter" aria-label="Favoris seulement">${IC.star(S.onlyFav)}</button></div>`;
+  // une carte : pastille ▶ = jouer la plage ; le nom (ou ▾) déplie les champs ; crayon (carte repliée) = page des détails
   h += list.length ? list.map(s => { const open = S.openId === s.id;
     return `<div class="solo acc ${s.id === S.soloId ? 'sel' : ''}${open ? ' open' : ''}">
       <div class="solo-head">
@@ -291,10 +305,10 @@ function renderPanel() {
         <button class="pick" data-act="solo-toggle" data-solo="${s.id}" aria-expanded="${open}" aria-label="Champs du solo"><span><b>${esc(s.name)}${s.instrument ? ' · ' + esc(s.instrument) : ''}</b><small>${fmt(s.start)} – ${fmt(s.end)} · ${s.tempo}%${s.soloist ? ' · ' + esc(s.soloist) : ''}</small></span></button>
         <button class="star ${s.fav ? 'on' : ''}" data-act="star" data-solo="${s.id}" aria-label="Favori">${IC.star(s.fav)}</button>
         ${open ? '' : `<button class="icon-sm" data-act="solo-details" data-solo="${s.id}" aria-label="Détails du solo">${PENCIL}</button>`}
-        <button class="icon-sm" data-act="solo-toggle" data-solo="${s.id}" aria-expanded="${open}" aria-label="${open ? 'Replier' : 'Déplier'} les options du solo">${open ? IC.chevUp : IC.chev}</button>
+        <button class="icon-sm" data-act="solo-toggle" data-solo="${s.id}" aria-expanded="${open}" aria-label="${open ? 'Replier' : 'Déplier'} les champs du solo">${open ? IC.chevUp : IC.chev}</button>
       </div>
       ${open ? soloEditor(s) : ''}
-    </div>`; }).join('') : `<p class="hint">${song.solos.length ? 'Aucun favori.' : 'Écoute le morceau, puis appuie sur « Nouveau solo » quand un solo commence.'}</p>`;
+    </div>`; }).join('') : `<p class="hint">${song.solos.length ? 'Aucun favori.' : 'Écoute le morceau, puis touche + quand un solo commence.'}</p>`;
   p.innerHTML = h; syncSoloPlay();
   const act = S.openId && song.solos.find(x => x.id === S.openId);
   if (!act) return;
@@ -305,26 +319,28 @@ function renderPanel() {
 }
 /* L'icône de la ligne du solo en cours suit la lecture (▶ / ⏸) */
 function syncSoloPlay() {
-  document.querySelectorAll('.solo-play').forEach(b => { b.innerHTML = b.dataset.solo === S.soloId && !audio.paused ? IC.pause : IC.play; });
+  document.querySelectorAll('.solo-play').forEach(b => { const on = b.dataset.solo === S.soloId && !audio.paused; b.classList.toggle('on', on); b.innerHTML = on ? IC.pause : IC.play; });
 }
 /* Début / fin / pas affichés dans les options et dans la page des détails */
 function syncEdges() {
   const so = curSolo(); if (!so) return;
   document.querySelectorAll('[data-edge]').forEach(b => { b.textContent = fmt(so[b.dataset.edge], true); });
   document.querySelectorAll('[data-step]').forEach(b => { b.textContent = 'Pas : ' + S.step + ' s'; });
+  const sub = $('#sheetSub'); if (sub) sub.textContent = `${fmt(so.start)} – ${fmt(so.end)} · ${so.tempo || S.tempo}%`;
 }
 
 /* ---------- Lecture ---------- */
 function updateTransport() {
-  const pb = $('#playBtn'); if (!pb) return;
-  pb.innerHTML = (audio.paused && !S.waiting) ? IC.play : IC.pause;
-  $('#loopBtn').classList.toggle('on', S.loop);
-  $('#tempoRange').value = S.tempo; $('#tempoLbl').textContent = S.tempo + ' %';
-  syncSoloPlay();
-  $('#resetTempo').disabled = S.tempo === 100;
-  const g = $('#gapBtn'), rb = $('#rampBtn');
-  if (g) { g.textContent = 'Pause entre passages : ' + (S.gap ? S.gap + ' s' : 'non'); g.classList.toggle('on', S.gap > 0); }
-  if (rb) { rb.textContent = 'Montée progressive : ' + (S.ramp ? 'oui' : 'non'); rb.classList.toggle('on', S.ramp); }
+  if (!document.querySelector('.player')) return;
+  const playing = !(audio.paused && !S.waiting), pct = Math.round((S.tempo - 30) / 120 * 100), so = curSolo();
+  document.querySelectorAll('.pl-play').forEach(b => { b.innerHTML = playing ? IC.pause : IC.play; });
+  document.querySelectorAll('.pl-loop').forEach(b => b.classList.toggle('on', S.loop));
+  document.querySelectorAll('.pl-tempo').forEach(r => { r.value = S.tempo; r.style.setProperty('--p', Math.max(0, Math.min(100, pct)) + '%'); });
+  document.querySelectorAll('.pl-tlbl').forEach(l => { l.textContent = S.tempo + ' %'; });
+  document.querySelectorAll('.pl-gap').forEach(b => { b.classList.toggle('on', S.gap > 0); b.querySelector('span').textContent = (S.gap || 0) + 's'; });
+  document.querySelectorAll('.pl-ramp').forEach(b => { b.textContent = 'Montée progressive : ' + (S.ramp ? 'oui' : 'non'); b.classList.toggle('on', S.ramp); });
+  document.querySelectorAll('.player').forEach(pl => pl.classList.toggle('has-solo', !!so));
+  syncEdges(); syncSoloPlay();
 }
 function updatePlayhead(forceScroll) {
   if (!S.song) return;
@@ -643,7 +659,9 @@ document.addEventListener('click', async e => {
     case 'seek-hold': if (e.detail === 0 && S.song) seekBy(+d.d); break;   // clavier / lecteur d'écran ; au doigt, voir les événements pointer
     case 'player-full': {
       S.full = !S.full; try { localStorage.setItem('sl-full', S.full ? '1' : '0'); } catch {}
-      const pl = $('.player'); if (pl) pl.classList.toggle('full', S.full); b.setAttribute('aria-expanded', S.full); break;
+      document.querySelectorAll('.player').forEach(pl => pl.classList.toggle('full', S.full));
+      document.querySelectorAll('.pl-expand').forEach(x => x.setAttribute('aria-expanded', S.full));
+      drawTimeline(); updatePlayhead(true); break;
     }
     case 'edit-song': openEdit(); break;
     case 'edit-close': closeEdit(); break;

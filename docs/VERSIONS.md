@@ -4,7 +4,7 @@
 |---|---|
 | `https://vav909.github.io/Music/` | version **publiée** (la racine du dépôt) |
 | `https://vav909.github.io/Music/v1/` | **v1 gelée** : ne plus la modifier |
-| `https://vav909.github.io/Music/v2/` | **v2** en chantier (nouveau graphisme) |
+| `https://vav909.github.io/Music/v2/` | **v2** : nouveau graphisme (maquettes dans `design/v2-reference/`), mêmes données que la v1 |
 
 Chaque version s'installe séparément sur le téléphone (noms « Solo Looper v1 » et « Solo Looper v2 »).
 
