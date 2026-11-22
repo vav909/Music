@@ -1,6 +1,6 @@
 {
-  "name": "Solo Looper v2",
-  "short_name": "Solos v2",
+  "name": "Loops",
+  "short_name": "Loops",
   "description": "Repérer, isoler et boucler des solos, avec tempo réglable sans changer la hauteur.",
   "lang": "fr",
   "start_url": "./",
