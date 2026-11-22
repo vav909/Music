@@ -6,9 +6,9 @@ const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(3
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const COLORS = ['#1f6feb'];       // thème sobre : tout en bleu (le champ color reste stocké)
 const PEAK_STEP = 0.25;            // résolution des pics stockés (secondes)
-const SLOT = 6;                    // largeur d'un petit rectangle + espace (px)
-const BAR_W = 2.43;
-const ZOOMS = [0.25, 0.5, 1, 2];   // secondes par rectangle
+const SLOT0 = 6, BAR0 = 2.43;      // pas et largeur d'un bâtonnet au zoom normal (px)
+const ZOOMS = [0.4, 0.6, 1, 1.6, 2.5, 4];   // facteur d'espacement : « − » rapproche les bâtonnets, « + » les écarte
+const slot = () => SLOT0 * ZOOMS[S.zoom], barW = () => Math.max(1, Math.min(BAR0 * ZOOMS[S.zoom], slot() - 1));
 const STEPS = [1, 0.5, 0.1];       // pas de réglage fin (secondes)
 
 /* ---------- Stockage (IndexedDB) ---------- */
@@ -34,7 +34,7 @@ function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(() => S.so
 /* ---------- État ---------- */
 const S = {
   songs: [], tab: 'songs', song: null, soloId: null,
-  loop: true, tempo: 100, zoom: 1, step: 1, gap: 0, ramp: false, passes: 0, waiting: false,
+  loop: true, tempo: 100, zoom: 2, step: 1, gap: 0, ramp: false, passes: 0, waiting: false,
   onlyFav: false, instr: '', status: null, openId: null, sort: (() => { try { return localStorage.getItem('sl-sort') === 'new' ? 'new' : 'alpha'; } catch { return 'alpha'; } })(),   // openId : solo dont les options sont dépliées
 };
 S.full = (() => { try { return localStorage.getItem('sl-full') === '1'; } catch { return false; } })();   // lecteur complet ou allégé
@@ -72,7 +72,7 @@ function chronoIcon(sign) {
 const audio = new Audio();
 audio.preload = 'auto';
 let objectUrl = null, raf = 0, wakeLock = null;
-const spb = () => ZOOMS[S.zoom];
+const spb = () => 0.5;   // secondes par bâtonnet (fixe : c'est l'espacement qui varie avec le zoom)
 const curSolo = () => S.song && S.song.solos.find(s => s.id === S.soloId);
 
 /* ---------- Utilitaires ---------- */
@@ -188,29 +188,13 @@ function renderLibrary() {
     c.innerHTML = `<div class="empty"><div class="big">♪</div><p>Aucun morceau pour l'instant.<br>Ajoute un fichier audio de ton téléphone pour commencer à découper des solos.</p><button class="cta" data-act="add-song">＋ Ajouter un morceau</button></div>`;
     return;
   }
-  if (S.tab === 'songs') {
-    const songs = [...S.songs].sort((a, b) => a.title.localeCompare(b.title, 'fr'));
-    c.innerHTML = `<div class="filters"><button class="chip ${S.onlyFav ? 'on' : ''}" data-act="fav-filter">${IC.star(S.onlyFav)} Favoris</button></div>` +
-      songs.filter(sg => !S.onlyFav || sg.solos.some(s => s.fav)).map(sg => `
-      <div class="song">
-        <div class="song-head">
-          ${sg.cover ? `<img class="thumb" src="${esc(sg.cover)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<button class="song-open" data-act="open-song" data-song="${sg.id}"><b>${esc(sg.title)}</b><small>${sg.artist ? esc(sg.artist) + ' · ' : ''}${fmt(sg.duration)} · ${sg.solos.length} solo${sg.solos.length > 1 ? 's' : ''}</small></button>
-          <button class="icon-btn" data-act="del-song" data-song="${sg.id}" aria-label="Supprimer">${IC.close}</button>
-        </div>
-        ${sg.solos.length ? `<div class="chips">${songChips(sg, S.onlyFav)}</div>` : ''}
-      </div>`).join('');
-  } else {
-    const all = S.songs.flatMap(sg => sg.solos.map(s => ({ sg, s })));
-    const instrs = [...new Set(all.map(x => x.s.instrument).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'fr'));
-    if (S.instr && !instrs.includes(S.instr)) S.instr = '';
-    const songs = [...S.songs].sort(S.sort === 'new' ? (x, y) => (x.added || 0) - (y.added || 0) : (x, y) => (x.title || '').localeCompare(y.title || '', 'fr'));
-    const groups = songs.map(sg => ({ sg, list: sg.solos.filter(s => (!S.onlyFav || s.fav) && (!S.instr || s.instrument === S.instr) && (S.status === null || (s.status || '') === S.status)).sort(bySoloOrder) })).filter(g => g.list.length);
-    c.innerHTML = `<div class="list lib">
-      <div class="io"><button data-act="export">${IC.up} Partager mes solos</button><button data-act="import">${IC.down} Importer des solos</button></div>
-      ${instrs.length ? `<div class="filters row-instr">` + instrs.map(i => `<button class="chip ${S.instr === i ? 'on' : ''}" data-act="instr-filter" data-instr="${esc(i)}">${esc(i)}</button>`).join('') + `</div>` : ''}
-      <div class="filters"><button class="chip ${S.onlyFav ? 'on' : ''}" data-act="fav-filter">${IC.star(S.onlyFav)} Favoris</button><button class="chip ${S.sort === 'alpha' ? 'on' : ''}" data-act="sort" data-sort="alpha">A – Z</button><button class="chip ${S.sort === 'new' ? 'on' : ''}" data-act="sort" data-sort="new">Arrivée</button></div>
-      <div class="filters row-status">` + Object.entries(STATUS).map(([k, v]) => `<button class="chip ${S.status === k ? 'on' : ''}" data-act="status-filter" data-status="${k}"><i class="st-dot st-${k || 'none'}"></i>${v}</button>`).join('') + `</div>` +
-      (groups.length ? groups.map(({ sg, list }) => `<h3 class="grp">${esc(sg.title)}</h3>` + list.map(s => `
+  const all = S.songs.flatMap(sg => sg.solos.map(s => ({ sg, s })));
+  const instrs = [...new Set(all.map(x => x.s.instrument).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'fr'));
+  if (S.instr && !instrs.includes(S.instr)) S.instr = '';
+  const filtering = S.onlyFav || !!S.instr || S.status !== null;
+  const songs = [...S.songs].sort(S.sort === 'new' ? (x, y) => (x.added || 0) - (y.added || 0) : (x, y) => (x.title || '').localeCompare(y.title || '', 'fr'));
+  const groups = songs.map(sg => ({ sg, list: sg.solos.filter(s => (!S.onlyFav || s.fav) && (!S.instr || s.instrument === S.instr) && (S.status === null || (s.status || '') === S.status)).sort(bySoloOrder) })).filter(g => !filtering || g.list.length);
+  const soloCard = (sg, s) => `
         <div class="swrap"><button class="swipe-del" data-act="lib-del" data-song="${sg.id}" data-solo="${s.id}" aria-label="Supprimer ce solo">${IC.trash}</button>
         <div class="solo acc${libOn(s.id) ? ' sel' : ''}">
           <div class="solo-head">
@@ -219,9 +203,19 @@ function renderLibrary() {
             ${statBtn(s, 'lib-status', `data-song="${sg.id}"`)}
             <button class="star ${s.fav ? 'on' : ''}" data-act="star-lib" data-song="${sg.id}" data-solo="${s.id}" aria-label="Favori">${IC.star(s.fav)}</button>
             <button class="icon-sm" data-act="lib-details" data-song="${sg.id}" data-solo="${s.id}" aria-label="Détails du solo">${PENCIL}</button>
-          </div></div></div>`).join('')).join('')
-        : `<div class="empty"><p>Aucun solo ici.<br>Ouvre un morceau et crée tes solos avec « + ».</p></div>`) + `</div>`;
-  }
+          </div></div></div>`;
+  // un morceau = sa carte (pochette, titre, détails) au-dessus de ses solos ; balayer la carte emporte tout le bloc (corbeille sur fond violet sur toute la hauteur)
+  const songCard = sg => `
+      <div class="grp-head"><button class="grp-open" data-act="open-song" data-song="${sg.id}">
+        ${sg.cover ? `<img class="grp-cover" src="${esc(sg.cover)}" alt="" loading="lazy" onerror="this.outerHTML='<span class=&quot;grp-cover ph&quot;>♪</span>'">` : '<span class="grp-cover ph">♪</span>'}
+        <span class="grp-t"><b>${esc(sg.title || 'Sans titre')}</b><small>${[sg.artist, sg.album].filter(Boolean).map(esc).join(' · ')}${sg.artist || sg.album ? ' · ' : ''}${fmt(sg.duration)} · ${sg.solos.length} solo${sg.solos.length > 1 ? 's' : ''}</small></span></button></div>`;
+  c.innerHTML = `<div class="list lib">
+      <div class="io"><button data-act="export">${IC.up} Partager mes solos</button><button data-act="import">${IC.down} Importer des solos</button></div>
+      ${instrs.length ? `<div class="filters row-instr">` + instrs.map(i => `<button class="chip ${S.instr === i ? 'on' : ''}" data-act="instr-filter" data-instr="${esc(i)}">${esc(i)}</button>`).join('') + `</div>` : ''}
+      <div class="filters"><button class="chip ${S.onlyFav ? 'on' : ''}" data-act="fav-filter">${IC.star(S.onlyFav)} Favoris</button><button class="chip ${S.sort === 'alpha' ? 'on' : ''}" data-act="sort" data-sort="alpha">A – Z</button><button class="chip ${S.sort === 'new' ? 'on' : ''}" data-act="sort" data-sort="new">Arrivée</button></div>
+      <div class="filters row-status">` + Object.entries(STATUS).map(([k, v]) => `<button class="chip ${S.status === k ? 'on' : ''}" data-act="status-filter" data-status="${k}"><i class="st-dot st-${k || 'none'}"></i>${v}</button>`).join('') + `</div>` +
+      (groups.length ? groups.map(({ sg, list }) => `<div class="grp-wrap"><button class="grp-del" data-act="del-song" data-song="${sg.id}" aria-label="Supprimer ce morceau et ses solos">${IC.trash}</button><div class="grp-inner">${songCard(sg)}${list.map(s => soloCard(sg, s)).join('')}</div></div>`).join('')
+        : `<div class="empty"><p>Aucun solo ici.</p></div>`) + `</div>`;
 }
 
 /* ---------- Vue morceau ---------- */
@@ -236,17 +230,13 @@ function renderSong() {
 /* Lecteur, sur la page du morceau et dans les détails du solo :
    réduit = bande du son, boucle / reculer / lecture / avancer, tempo ; complet = + temps, zoom, début / fin du solo, pas, montée progressive */
 function playerHTML() {
-  const edge = w => { const n = w === 'start' ? 'Début' : 'Fin'; return `<div class="pl-edge"><span class="lbl">${n}</span><b data-edge="${w}">0:00.0</b><span class="sp"></span>
-      <button class="pl-sq" data-act="nudge" data-w="${w}" data-d="-1" aria-label="${n} moins">${IC.minus}</button>
-      <button class="pl-sq" data-act="nudge" data-w="${w}" data-d="1" aria-label="${n} plus">${IC.plus}</button>
-      <button class="pl-sq here" data-act="here" data-w="${w}" aria-label="${n} : prendre la position de lecture">${IC.target}</button></div>`; };
   return `<section class="player${S.full ? ' full' : ''}">
     <div class="tlbox">${timelineTools()}${timelineHTML()}</div>
     <div class="pl-ctl">
       <button class="pl-loop" data-act="loop" aria-label="Boucle">${IC.loop}</button>
-      <button class="pl-seek" data-act="seek-hold" data-d="-1" aria-label="Reculer d’une seconde (appui long : 5 puis 10 secondes)">${IC.rew}</button>
+      <button class="pl-seek" data-act="seek-hold" data-d="-1" aria-label="Reculer d’une demi-seconde (appui long : 1, 3, 5 puis 10 secondes)">${IC.rew}</button>
       <button class="pl-play" data-act="play" aria-label="Lecture"></button>
-      <button class="pl-seek" data-act="seek-hold" data-d="1" aria-label="Avancer d’une seconde (appui long : 5 puis 10 secondes)">${IC.fwd}</button>
+      <button class="pl-seek" data-act="seek-hold" data-d="1" aria-label="Avancer d’une demi-seconde (appui long : 1, 3, 5 puis 10 secondes)">${IC.fwd}</button>
       <button class="pl-expand" data-act="player-full" aria-expanded="${S.full}" aria-label="Plus de réglages">${IC.chevUp}</button>
     </div>
     <div class="pl-tempo-row">
@@ -256,7 +246,6 @@ function playerHTML() {
       <button class="pl-sq" data-act="tempo" data-d="5" aria-label="Tempo plus 5 pour cent">${IC.plus}</button>
       <button class="pl-sq pl-gap" data-act="gap" aria-label="Pause entre passages"><i></i><span>0s</span><i></i></button>
     </div>
-    <div class="pl-edges">${edge('start')}${edge('end')}</div>
     <div class="pl-more"><button data-act="step" data-step>Pas : 1 s</button><button class="pl-ramp" data-act="ramp">Montée progressive : non</button></div>
   </section>`;
 }
@@ -269,7 +258,7 @@ function mountPlayer(root) {
 /* La timeline existe à deux endroits (page du morceau, détails du solo) : chaque exemplaire se dessine et suit la lecture. */
 const TLS = [];
 const timelineHTML = () => '<div class="tl-scroll"><div class="tl-inner"><canvas></canvas><div class="playhead"></div></div></div>';
-const timelineTools = () => '<div class="tl-tools"><span class="tl-time"></span><button data-act="zoom" data-d="1" aria-label="Dézoomer">' + IC.minus + '</button><button data-act="zoom" data-d="-1" aria-label="Zoomer">' + IC.plus + '</button></div>';
+const timelineTools = () => '<div class="tl-tools"><span class="tl-time"></span><button data-act="zoom" data-d="-1" aria-label="Rapprocher les bâtonnets (dézoomer)">' + IC.minus + '</button><button data-act="zoom" data-d="1" aria-label="Écarter les bâtonnets (zoomer)">' + IC.plus + '</button></div>';
 function mountTimeline(root) {
   if (!root) return null;
   const tl = { root, sc: root.querySelector('.tl-scroll'), inner: root.querySelector('.tl-inner'), cv: root.querySelector('canvas'), ph: root.querySelector('.playhead'), lbl: root.querySelector('.tl-time'), touching: false };
@@ -277,7 +266,7 @@ function mountTimeline(root) {
   tl.sc.addEventListener('touchend', () => setTimeout(() => tl.touching = false, 1500), { passive: true });
   tl.inner.addEventListener('click', e => {
     const x = e.clientX - tl.inner.getBoundingClientRect().left;
-    audio.currentTime = Math.min(S.song.duration, Math.max(0, x / SLOT * spb()));
+    audio.currentTime = Math.min(S.song.duration, Math.max(0, x / slot() * spb()));
     updatePlayhead();
   });
   for (let i = TLS.length - 1; i >= 0; i--) if (!document.contains(TLS[i].root)) TLS.splice(i, 1);
@@ -289,7 +278,7 @@ function drawOneTimeline(tl) {
   const cv = tl.cv; if (!cv) return;
   const song = S.song, dur = song.duration, per = spb();
   const pl = tl.root.closest('.player'), full = !pl || pl.classList.contains('full');   // bande fine (réduit) ou grande forme d'onde (complet)
-  const nBars = Math.ceil(dur / per), W = nBars * SLOT, H = full ? 104 : 34, LBL = full ? 16 : 0;
+  const nBars = Math.ceil(dur / per), W = nBars * slot(), H = full ? 104 : 34, LBL = full ? 16 : 0;
   const inner = tl.inner; inner.style.width = W + 'px'; inner.style.height = H + 'px';
   const dpr = Math.min(window.devicePixelRatio || 1, 16000 / W);
   cv.width = Math.ceil(W * dpr); cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
@@ -298,9 +287,9 @@ function drawOneTimeline(tl) {
   // fond du solo sélectionné
   if (act) {
     g.fillStyle = '#e5e5f0';
-    g.fillRect(act.start / per * SLOT, 0, (act.end - act.start) / per * SLOT, H);
+    g.fillRect(act.start / per * slot(), 0, (act.end - act.start) / per * slot(), H);
     g.fillStyle = '#636487';
-    g.fillRect(act.start / per * SLOT - 1, 0, 3, H); g.fillRect(act.end / per * SLOT - 2, 0, 3, H);
+    g.fillRect(act.start / per * slot() - 1, 0, 3, H); g.fillRect(act.end / per * slot() - 2, 0, 3, H);
   }
   const mid = (H - LBL) / 2, maxH = full ? H - LBL - 12 : H - 8, per2 = PEAK_STEP;
   for (let i = 0; i < nBars; i++) {
@@ -310,22 +299,27 @@ function drawOneTimeline(tl) {
     const h = H * (.3 + .4 * p), tm = t0 + per / 2;
     // la plage sélectionnée a toujours la couleur de sélection (même si un autre solo la chevauche) ; le reste reste beige
     g.fillStyle = act && tm >= act.start && tm <= act.end ? '#636487' : '#e3c5a2';
-    const x = i * SLOT + (SLOT - BAR_W) / 2, y = mid - h / 2;
-    g.beginPath(); g.roundRect(x, y, BAR_W, h, BAR_W / 2); g.fill();   // bâtonnets arrondis, comme sur la maquette
+    const SL = slot(), BW = barW(), x = i * SL + (SL - BW) / 2, y = mid - h / 2;
+    g.beginPath(); g.roundRect(x, y, BW, h, BW / 2); g.fill();   // bâtonnets arrondis, comme sur la maquette
   }
   // repères de temps
-  const stepS = [5, 10, 15, 30, 60, 120, 300].find(s => s / per * SLOT >= 56) || 300;
+  const stepS = [5, 10, 15, 30, 60, 120, 300].find(s => s / per * slot() >= 56) || 300;
   g.fillStyle = '#98836a'; g.font = '11px Inter, system-ui'; g.textBaseline = 'bottom';
-  if (full) for (let t = 0; t < dur; t += stepS) g.fillText(fmt(t), t / per * SLOT + 3, H - 2);
+  if (full) for (let t = 0; t < dur; t += stepS) g.fillText(fmt(t), t / per * slot() + 3, H - 2);
 }
 
 const PENCIL = IC.pencil;
 /* Champs d'un solo : dépliés sous sa carte (le début et la fin se règlent dans le lecteur complet) */
+const edgeRow = w => { const n = w === 'start' ? 'Début' : 'Fin'; return `<div class="pl-edge"><span class="lbl">${n}</span><b data-edge="${w}">0:00.0</b><span class="sp"></span>
+    <button class="pl-sq" data-act="nudge" data-w="${w}" data-d="-1" aria-label="${n} moins">${IC.minus}</button>
+    <button class="pl-sq" data-act="nudge" data-w="${w}" data-d="1" aria-label="${n} plus">${IC.plus}</button>
+    <button class="pl-sq here" data-act="here" data-w="${w}" aria-label="${n} : prendre la position de lecture">${IC.target}</button></div>`; };
 function soloEditor(act) {
   return `<div class="editor">
       <input class="txt" id="soloName" value="${esc(act.name)}" placeholder="Nom du solo" aria-label="Nom du solo">
       <input class="txt" id="soloInstr" list="instrs" value="${esc(act.instrument)}" placeholder="Instrument (flûte, sax…)" aria-label="Instrument">
       <input class="txt" id="soloSoloist" value="${esc(act.soloist)}" placeholder="Soliste (ex. Miles Davis)" aria-label="Soliste">
+      <div class="ed-edges">${edgeRow('start')}${edgeRow('end')}</div>
       <div class="ed-act"><button class="cta2" data-act="sheet-open">Détails du solo</button>
       <button class="del" data-act="solo-del" aria-label="Supprimer ce solo">${IC.trash}</button></div>
     </div>`;
@@ -349,7 +343,7 @@ function renderPanel() {
       </div>
       ${open ? soloEditor(s) : ''}
     </div></div>`; }).join('') : `<p class="hint">${song.solos.length ? 'Aucun favori.' : 'Écoute le morceau, puis touche + quand un solo commence.'}</p>`;
-  p.innerHTML = h; syncSoloPlay();
+  p.innerHTML = h; syncSoloPlay(); syncEdges();
   const act = S.openId && song.solos.find(x => x.id === S.openId);
   if (!act) return;
   const sl = $('#soloSoloist'), n = $('#soloName'), i = $('#soloInstr');
@@ -384,7 +378,7 @@ function updateTransport() {
 }
 function updatePlayhead(forceScroll) {
   if (!S.song) return;
-  const x = audio.currentTime / spb() * SLOT, label = `${fmt(audio.currentTime)} / ${fmt(S.song.duration)}`;
+  const x = audio.currentTime / spb() * slot(), label = `${fmt(audio.currentTime)} / ${fmt(S.song.duration)}`;
   for (const tl of liveTimelines()) {
     tl.ph.style.transform = `translateX(${x}px)`;
     if (tl.lbl) tl.lbl.textContent = label;
@@ -488,7 +482,7 @@ function newSolo() {
     id: uid(), name: `Solo ${song.solos.length + 1}`, instrument: song.solos.length ? song.solos[song.solos.length - 1].instrument : '',
     start, end: Math.min(song.duration, start + 20), tempo: S.tempo, fav: false, color: COLORS[song.solos.length % COLORS.length],
   };
-  if (song.solos.some(x => x.ord != null)) solo.ord = Math.max(...song.solos.map(x => x.ord ?? 0)) + 1;
+  [...song.solos].sort(bySoloOrder).forEach((x, i) => { x.ord = i + 1; }); solo.ord = 0;   // le nouveau solo arrive en haut de la pile
   song.solos.push(solo); saveSoon();
   pickSolo(solo.id, false); S.openId = solo.id; renderPanel();   // les options se déplient pour régler la fin
   toast('Solo créé : place la fin avec « ⌖ ici »');
@@ -649,7 +643,7 @@ async function importSolos(file) {
 }
 $('#jsonInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importSolos(f); });
 
-/* ---------- Avance / recul : un appui = 1 s ; en maintenant 2 s, par 5 s ; après 4 s, par 10 s ---------- */
+/* ---------- Avance / recul : un appui = 0,5 s ; en maintenant : 1 s, puis 3 s, 5 s et 10 s ---------- */
 function seekBy(dt) {
   if (!S.song) return;
   audio.currentTime = Math.max(0, Math.min(S.song.duration, audio.currentTime + dt)); updatePlayhead();
@@ -658,10 +652,10 @@ const HOLD = { timer: null };
 function stopHold() { clearTimeout(HOLD.timer); HOLD.timer = null; }
 function startHold(dir) {
   stopHold(); const t0 = performance.now();
-  seekBy(dir);
+  seekBy(dir * 0.5);
   const step = () => {
-    const held = performance.now() - t0, n = held >= 4000 ? 10 : held >= 2000 ? 5 : 1;
-    seekBy(dir * n); HOLD.timer = setTimeout(step, n === 1 ? 300 : 450);
+    const held = performance.now() - t0, n = held >= 4200 ? 10 : held >= 3000 ? 5 : held >= 1800 ? 3 : 1;
+    seekBy(dir * n); HOLD.timer = setTimeout(step, n === 1 ? 350 : 450);
   };
   HOLD.timer = setTimeout(step, 450);
 }
@@ -710,7 +704,7 @@ document.addEventListener('click', async e => {
     case 'loop': S.loop = !S.loop; updateTransport(); break;
     case 'tempo': setTempo(S.tempo + +d.d); break;
     case 'tempo-reset': setTempo(100); break;
-    case 'seek-hold': if (e.detail === 0 && S.song) seekBy(+d.d); break;   // clavier / lecteur d'écran ; au doigt, voir les événements pointer
+    case 'seek-hold': if (e.detail === 0 && S.song) seekBy(+d.d * 0.5); break;   // clavier / lecteur d'écran ; au doigt, voir les événements pointer
     case 'player-full': {
       S.full = !S.full; try { localStorage.setItem('sl-full', S.full ? '1' : '0'); } catch {}
       document.querySelectorAll('.player').forEach(pl => pl.classList.toggle('full', S.full));
@@ -757,11 +751,12 @@ $('#fileInput').addEventListener('change', e => { const f = [...e.target.files];
 /* Liste « Mes solos » : appui long puis glisser = changer l'ordre ; balayage vers la gauche = corbeille */
 (() => {
   const SW = 80; let g = null, mute = false;
-  const closeSwipes = except => document.querySelectorAll('.swrap.swiped').forEach(w => { if (w !== except) { w.classList.remove('swiped'); const c = w.querySelector('.solo'); c.style.transition = ''; c.style.transform = ''; } });
+  const cardOf = w => w.classList.contains('grp-wrap') ? w.querySelector(':scope > .grp-inner') : w.querySelector('.solo');
+  const closeSwipes = except => document.querySelectorAll('.swrap.swiped, .grp-wrap.swiped').forEach(w => { if (w !== except) { w.classList.remove('swiped'); const c = cardOf(w); c.style.transition = ''; c.style.transform = ''; } });
   function begin(t, x, y) {
-    const w = t.closest && t.closest('.swrap');
-    closeSwipes(w); if (!w || t.closest('.swipe-del, input, select')) return;
-    g = { w, card: w.querySelector('.solo'), x0: x, y0: y, mode: '', open: w.classList.contains('swiped') };
+    const h = t.closest && t.closest('.grp-head'), w = (t.closest && t.closest('.swrap')) || (h && h.closest('.grp-wrap')) || (t.closest && t.closest('.grp-del') && t.closest('.grp-wrap'));
+    closeSwipes(w); if (!w || t.closest('.swipe-del, .grp-del, input, select')) return;
+    g = { w, card: cardOf(w), x0: x, y0: y, mode: '', open: w.classList.contains('swiped') };
     if (w.closest('#soloPanel')) g.timer = setTimeout(() => { if (g && !g.mode) startDrag(); }, 380);
   }
   function startDrag() {
