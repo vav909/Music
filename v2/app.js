@@ -35,7 +35,7 @@ function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(() => S.so
 const S = {
   songs: [], tab: 'songs', song: null, soloId: null,
   loop: true, tempo: 100, zoom: 1, step: 1, gap: 0, ramp: false, passes: 0, waiting: false,
-  onlyFav: false, instr: '', openId: null, sort: (() => { try { return localStorage.getItem('sl-sort') === 'new' ? 'new' : 'alpha'; } catch { return 'alpha'; } })(),   // openId : solo dont les options sont dépliées
+  onlyFav: false, instr: '', status: null, openId: null, sort: (() => { try { return localStorage.getItem('sl-sort') === 'new' ? 'new' : 'alpha'; } catch { return 'alpha'; } })(),   // openId : solo dont les options sont dépliées
 };
 S.full = (() => { try { return localStorage.getItem('sl-full') === '1'; } catch { return false; } })();   // lecteur complet ou allégé
 /* Icônes dessinées en trait fin (épaisseur commune). Les symboles ▶ ⏸ ⏹ ⬆ ⬇ en texte deviennent des emojis colorés sur Android. */
@@ -173,6 +173,9 @@ async function libPlay(songId, soloId) {
   audio.readyState >= 1 ? go() : audio.addEventListener('loadedmetadata', go, { once: true });
   syncLibPlay();
 }
+/* Statut de travail d'un solo : '' (non renseigné) → à travailler → en cours → validé */
+const STATUS = { '': 'Non renseigné', todo: 'À travailler', doing: 'En cours', done: 'Validé' }, STATUS_NEXT = { '': 'todo', todo: 'doing', doing: 'done', done: '' };
+const statBtn = (so, act, extra = '') => `<button class="stat" data-act="${act}" ${extra} data-solo="${so.id}" aria-label="Statut : ${STATUS[so.status || '']} (toucher pour changer)"><i class="st-${so.status || 'none'}"></i></button>`;
 const bySoloOrder = (a, b) => (a.ord ?? 1e9) - (b.ord ?? 1e9) || a.start - b.start;   // ordre choisi à la main (champ « ord », ajouté), sinon par début
 function songChips(song, onlyFav) {
   return song.solos.filter(s => !onlyFav || s.fav).map(s =>
@@ -201,21 +204,22 @@ function renderLibrary() {
     const instrs = [...new Set(all.map(x => x.s.instrument).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'fr'));
     if (S.instr && !instrs.includes(S.instr)) S.instr = '';
     const songs = [...S.songs].sort(S.sort === 'new' ? (x, y) => (x.added || 0) - (y.added || 0) : (x, y) => (x.title || '').localeCompare(y.title || '', 'fr'));
-    const groups = songs.map(sg => ({ sg, list: sg.solos.filter(s => (!S.onlyFav || s.fav) && (!S.instr || s.instrument === S.instr)).sort(bySoloOrder) })).filter(g => g.list.length);
+    const groups = songs.map(sg => ({ sg, list: sg.solos.filter(s => (!S.onlyFav || s.fav) && (!S.instr || s.instrument === S.instr) && (S.status === null || (s.status || '') === S.status)).sort(bySoloOrder) })).filter(g => g.list.length);
     c.innerHTML = `<div class="list lib">
       <div class="io"><button data-act="export">${IC.up} Partager mes solos</button><button data-act="import">${IC.down} Importer des solos</button></div>
-      <div class="filters"><button class="chip ${S.sort === 'alpha' ? 'on' : ''}" data-act="sort" data-sort="alpha">A – Z</button><button class="chip ${S.sort === 'new' ? 'on' : ''}" data-act="sort" data-sort="new">Arrivée</button><span class="sep"></span>
-        <button class="chip ${S.onlyFav ? 'on' : ''}" data-act="fav-filter">${IC.star(S.onlyFav)} Favoris</button>` +
-      instrs.map(i => `<button class="chip ${S.instr === i ? 'on' : ''}" data-act="instr-filter" data-instr="${esc(i)}">${esc(i)}</button>`).join('') + `</div>` +
+      ${instrs.length ? `<div class="filters row-instr">` + instrs.map(i => `<button class="chip ${S.instr === i ? 'on' : ''}" data-act="instr-filter" data-instr="${esc(i)}">${esc(i)}</button>`).join('') + `</div>` : ''}
+      <div class="filters"><button class="chip ${S.onlyFav ? 'on' : ''}" data-act="fav-filter">${IC.star(S.onlyFav)} Favoris</button><button class="chip ${S.sort === 'alpha' ? 'on' : ''}" data-act="sort" data-sort="alpha">A – Z</button><button class="chip ${S.sort === 'new' ? 'on' : ''}" data-act="sort" data-sort="new">Arrivée</button></div>
+      <div class="filters row-status">` + Object.entries(STATUS).map(([k, v]) => `<button class="chip ${S.status === k ? 'on' : ''}" data-act="status-filter" data-status="${k}"><i class="st-dot st-${k || 'none'}"></i>${v}</button>`).join('') + `</div>` +
       (groups.length ? groups.map(({ sg, list }) => `<h3 class="grp">${esc(sg.title)}</h3>` + list.map(s => `
         <div class="swrap"><button class="swipe-del" data-act="lib-del" data-song="${sg.id}" data-solo="${s.id}" aria-label="Supprimer ce solo">${IC.trash}</button>
         <div class="solo acc${libOn(s.id) ? ' sel' : ''}">
           <div class="solo-head">
             <button class="solo-play${libOn(s.id) ? ' on' : ''}" data-act="lib-play" data-song="${sg.id}" data-solo="${s.id}" aria-label="Jouer ce solo">${libOn(s.id) ? IC.pause : IC.play}</button>
             <button class="pick" data-act="lib-play" data-song="${sg.id}" data-solo="${s.id}"><span><b>${esc(s.name)}${s.instrument ? ' · ' + esc(s.instrument) : ''}</b><small>${fmt(s.start)} – ${fmt(s.end)} · ${s.tempo}%${s.soloist ? ' · ' + esc(s.soloist) : ''}</small></span></button>
+            ${statBtn(s, 'lib-status', `data-song="${sg.id}"`)}
             <button class="star ${s.fav ? 'on' : ''}" data-act="star-lib" data-song="${sg.id}" data-solo="${s.id}" aria-label="Favori">${IC.star(s.fav)}</button>
             <button class="icon-sm" data-act="lib-details" data-song="${sg.id}" data-solo="${s.id}" aria-label="Détails du solo">${PENCIL}</button>
-          </div></div>`).join('')).join('')
+          </div></div></div>`).join('')).join('')
         : `<div class="empty"><p>Aucun solo ici.<br>Ouvre un morceau et crée tes solos avec « + ».</p></div>`) + `</div>`;
   }
 }
@@ -338,6 +342,7 @@ function renderPanel() {
       <div class="solo-head">
         <button class="solo-play" data-act="solo-pick" data-solo="${s.id}" aria-label="Jouer ce solo">${IC.play}</button>
         <button class="pick" data-act="solo-toggle" data-solo="${s.id}" aria-expanded="${open}" aria-label="Champs du solo"><span><b>${esc(s.name)}${s.instrument ? ' · ' + esc(s.instrument) : ''}</b><small>${fmt(s.start)} – ${fmt(s.end)} · ${s.tempo}%${s.soloist ? ' · ' + esc(s.soloist) : ''}</small></span></button>
+        ${statBtn(s, 'solo-status')}
         <button class="star ${s.fav ? 'on' : ''}" data-act="star" data-solo="${s.id}" aria-label="Favori">${IC.star(s.fav)}</button>
         ${open ? '' : `<button class="icon-sm" data-act="solo-details" data-solo="${s.id}" aria-label="Détails du solo">${PENCIL}</button>`}
         <button class="icon-sm" data-act="solo-toggle" data-solo="${s.id}" aria-expanded="${open}" aria-label="${open ? 'Replier' : 'Déplier'} les champs du solo">${open ? IC.chevUp : IC.chev}</button>
@@ -678,6 +683,9 @@ document.addEventListener('click', async e => {
     case 'add-song': $('#fileInput').click(); break;
     case 'back': closeSong(); break;
     case 'tab': libStop(); S.tab = d.tab; render(); break;
+    case 'solo-status': { const so = S.song.solos.find(x => x.id === d.solo); if (so) { so.status = STATUS_NEXT[so.status || '']; saveSoon(); renderPanel(); toast('Statut : ' + STATUS[so.status].toLowerCase()); } break; }
+    case 'lib-status': { const sg = S.songs.find(x => x.id === d.song), so = sg && sg.solos.find(x => x.id === d.solo); if (so) { so.status = STATUS_NEXT[so.status || '']; saveSongNow(sg); render(); toast('Statut : ' + STATUS[so.status].toLowerCase()); } break; }
+    case 'status-filter': S.status = S.status === d.status ? null : d.status; render(); break;
     case 'lib-play': libPlay(d.song, d.solo); break;
     case 'lib-details': await openSong(d.song); if (S.song) { pickSolo(d.solo, false); openSheet(); } break;
     case 'lib-del': {

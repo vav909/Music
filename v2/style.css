@@ -331,3 +331,21 @@ details.sec2 > summary::after { width: 18px; height: 9px; background-image: url(
 .list.lib .chip { background: var(--bg); }
 .list.lib .chip.on { background: var(--accent); }
 h3.grp { margin: 18px 3px 10px; font-size: 15px; font-weight: 700; color: var(--text); }
+
+/* Statut de travail (disques) : couleurs demandées par l'utilisatrice */
+.stat { width: 32px; min-width: 32px; height: 52px; min-height: 52px; padding: 0; background: transparent; display: grid; place-items: center; }
+.stat i, i.st-dot { width: 20px; height: 20px; border-radius: 50%; display: block; box-sizing: border-box; }
+.st-done { background: #b6d7a8; } .st-doing { background: #f8c9a0; } .st-todo { background: #f3b4c6; }
+.st-none { border: 2px solid #a99fcb; background: transparent; }
+i.st-dot { width: 14px; height: 14px; display: inline-block; margin-right: 7px; vertical-align: -2px; }
+i.st-dot.st-none { border-width: 1.5px; }
+.solo.acc .star { width: 36px; min-width: 36px; }
+/* Onglet Solos : trois lignes de filtres */
+.list.lib .filters { flex-wrap: nowrap; padding: 10px 0 0; overflow-x: auto; scrollbar-width: none; }
+.list.lib .filters::-webkit-scrollbar { display: none; }
+.list.lib .chip { flex: none; white-space: nowrap; }
+
+.chip i.st-dot { width: 14px; height: 14px; margin-right: 7px; border-radius: 50%; display: inline-block; flex: none; margin-right: 0; }
+.chip i.st-done { background: #b6d7a8; } .chip i.st-doing { background: #f8c9a0; } .chip i.st-todo { background: #f3b4c6; }
+.chip i.st-none { background: transparent; border: 1.5px solid #a99fcb; }
+.list.lib .chip { gap: 8px; }
