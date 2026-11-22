@@ -251,7 +251,7 @@ function drawOneTimeline(tl) {
   const cv = tl.cv; if (!cv) return;
   const song = S.song, dur = song.duration, per = spb();
   const pl = tl.root.closest('.player'), full = !pl || pl.classList.contains('full');   // bande fine (réduit) ou grande forme d'onde (complet)
-  const nBars = Math.ceil(dur / per), W = nBars * SLOT, H = full ? 104 : 36, LBL = full ? 16 : 0;
+  const nBars = Math.ceil(dur / per), W = nBars * SLOT, H = full ? 104 : 34, LBL = full ? 16 : 0;
   const inner = tl.inner; inner.style.width = W + 'px'; inner.style.height = H + 'px';
   const dpr = Math.min(window.devicePixelRatio || 1, 16000 / W);
   cv.width = Math.ceil(W * dpr); cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
@@ -269,7 +269,7 @@ function drawOneTimeline(tl) {
     const t0 = i * per, t1 = t0 + per;
     let p = 0;
     for (let k = Math.floor(t0 / per2); k < Math.max(Math.floor(t0 / per2) + 1, Math.ceil(t1 / per2)); k++) p = Math.max(p, song.peaks[k] || 0);
-    const h = Math.max(maxH * .33, p * maxH), tm = t0 + per / 2;
+    const h = H * (.3 + .4 * p), tm = t0 + per / 2;
     const inSolo = solos.find(s => tm >= s.start && tm <= s.end);
     g.fillStyle = inSolo ? (inSolo === act ? '#636487' : '#d3ae80') : '#e3c5a2';
     const x = i * SLOT + (SLOT - BAR_W) / 2, y = mid - h / 2;
