@@ -349,3 +349,31 @@ i.st-dot.st-none { border-width: 1.5px; }
 .chip i.st-done { background: #b6d7a8; } .chip i.st-doing { background: #f8c9a0; } .chip i.st-todo { background: #f3b4c6; }
 .chip i.st-none { background: transparent; border: 1.5px solid #a99fcb; }
 .list.lib .chip { gap: 8px; }
+
+/* Mes prises */
+.tk-wrap { display: grid; gap: 10px; }
+.tk-rec { height: 56px; border-radius: 28px; background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 17px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.tk-rec.on { background: var(--text); }
+.tk-list { display: grid; gap: 10px; }
+.tk { background: var(--bg); border-radius: 16px; padding: 12px 12px 6px; display: grid; gap: 10px; }
+.tk-top { display: flex; align-items: center; justify-content: space-between; }
+.tk-date { color: var(--muted); font-size: 12px; }
+.tk-del { width: 40px; min-width: 40px; height: 40px; min-height: 40px; padding: 0; background: transparent; color: var(--accent); display: grid; place-items: center; }
+.tk-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.tk-b { min-height: 44px; border-radius: 22px; padding: 0 14px; background: var(--tint); color: var(--accent); display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.tk-b.on { background: var(--accent); color: var(--accent-ink); }
+.tk-b svg { width: 20px; height: 20px; }
+.tk-vol { display: grid; grid-template-columns: 96px 1fr 48px; align-items: center; gap: 8px; font-size: 14px; }
+.tk-vol b { text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
+.tk input[type=range], .tk-wrap input[type=range] { accent-color: var(--accent); width: 100%; min-width: 0; }
+details.tk-off > summary, details.tk-set > summary { list-style: none; cursor: pointer; min-height: 44px; display: flex; align-items: center; color: var(--muted); font-size: 14px; }
+details.tk-off > summary::-webkit-details-marker, details.tk-set > summary::-webkit-details-marker { display: none; }
+details.tk-off > summary::after, details.tk-set > summary::after { content: ''; width: 14px; height: 7px; margin-left: 8px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 7' fill='none' stroke='%2398836a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l6 5 6-5'/%3E%3C/svg%3E") center / contain no-repeat; }
+details[open].tk-off > summary::after, details[open].tk-set > summary::after { transform: rotate(180deg); }
+.tk-off-row { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; }
+.tk-off-row .pl-sq { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
+.tk-off-row b { min-width: 70px; text-align: center; font-variant-numeric: tabular-nums; }
+.tk-essai { color: var(--muted); font-size: 11px; }
+.tk-set-body { display: grid; gap: 8px; padding-bottom: 8px; }
+.tk-f { display: grid; gap: 6px; font-size: 14px; color: var(--muted); }
+.tk-f select { min-height: 48px; font: inherit; color: var(--text); background: var(--bg); border: 0; border-radius: 14px; padding: 0 10px; }

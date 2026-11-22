@@ -294,7 +294,7 @@ function drawOneTimeline(tl) {
   const dpr = Math.min(window.devicePixelRatio || 1, 16000 / W);
   cv.width = Math.ceil(W * dpr); cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
   const g = cv.getContext('2d'); g.scale(dpr, dpr);
-  const solos = song.solos, act = curSolo();
+  const act = curSolo();
   // fond du solo sélectionné
   if (act) {
     g.fillStyle = '#e5e5f0';
@@ -308,8 +308,8 @@ function drawOneTimeline(tl) {
     let p = 0;
     for (let k = Math.floor(t0 / per2); k < Math.max(Math.floor(t0 / per2) + 1, Math.ceil(t1 / per2)); k++) p = Math.max(p, song.peaks[k] || 0);
     const h = H * (.3 + .4 * p), tm = t0 + per / 2;
-    const inSolo = solos.find(s => tm >= s.start && tm <= s.end);
-    g.fillStyle = inSolo ? (inSolo === act ? '#636487' : '#d3ae80') : '#e3c5a2';
+    // la plage sélectionnée a toujours la couleur de sélection (même si un autre solo la chevauche) ; le reste reste beige
+    g.fillStyle = act && tm >= act.start && tm <= act.end ? '#636487' : '#e3c5a2';
     const x = i * SLOT + (SLOT - BAR_W) / 2, y = mid - h / 2;
     g.beginPath(); g.roundRect(x, y, BAR_W, h, BAR_W / 2); g.fill();   // bâtonnets arrondis, comme sur la maquette
   }
@@ -605,6 +605,7 @@ async function diagnostic() {
     song: { title: song.title, file: song.file || null, artist: song.artist || '', album: song.album || '', duration: song.duration,
       coverKind: !song.cover ? 'aucune' : /^data:/.test(song.cover) ? 'intégrée au fichier' : 'en ligne', tags: song.tags || null, lookup: song.lookupLog || null },
     solo: solo ? { range: solo.range || null, top: !!solo.top, name: solo.name, instrument: solo.instrument, soloist: solo.soloist, start: solo.start, end: solo.end, tempoPct: solo.tempo } : null,
+    takes: typeof Takes !== 'undefined' ? Takes.diag() : null,
     score: sc ? { bpm: sc.bpm, lead: sc.lead, swing: !!sc.swing, tapped: !!sc.tapped, flats: !!sc.flats, edited: !!sc.edited, diag: sc.diag || null, raw: sc.raw, notes: sc.notes } : null,
   };
   const file = new File([JSON.stringify(rep, null, 1)], 'diagnostic-solo-looper.json', { type: 'application/json' });
@@ -689,7 +690,7 @@ document.addEventListener('click', async e => {
     case 'lib-play': libPlay(d.song, d.solo); break;
     case 'lib-details': await openSong(d.song); if (S.song) { pickSolo(d.solo, false); openSheet(); } break;
     case 'lib-del': {
-      const sg = S.songs.find(x => x.id === d.song); if (!sg) break;
+      const sg = S.songs.find(x => x.id === d.song); if (!sg || !(await Takes.confirmDelete(d.solo))) break;
       if (S.lib && S.lib.soloId === d.solo) libStop();
       sg.solos = sg.solos.filter(x => x.id !== d.solo); saveSongNow(sg); render(); toast('Solo supprimé'); break;
     }
@@ -699,7 +700,7 @@ document.addEventListener('click', async e => {
     case 'open-solo': openSong(d.song, d.solo); break;
     case 'del-song':
       if (confirm('Supprimer ce morceau et tous ses solos ?')) {
-        await idb('songs', 'readwrite', st => st.delete(d.song)); await idb('audio', 'readwrite', st => st.delete(d.song));
+        await idb('songs', 'readwrite', st => st.delete(d.song)); await idb('audio', 'readwrite', st => st.delete(d.song)); await Takes.deleteSong(d.song);
         S.songs = S.songs.filter(x => x.id !== d.song); render();
       } break;
     case 'star-lib': { const sg = S.songs.find(x => x.id === d.song), so = sg.solos.find(x => x.id === d.solo); so.fav = !so.fav; saveSongNow(sg); render(); break; }
@@ -729,10 +730,10 @@ document.addEventListener('click', async e => {
     case 'solo-toggle': if (S.openId === d.solo) { S.openId = null; renderPanel(); } else { pickSolo(d.solo, false); S.openId = d.solo; renderPanel(); } break;
     case 'solo-details': pickSolo(d.solo, false); openSheet(); break;
     case 'solo-del':
-      if (s && confirm(`Supprimer « ${s.name} » ?`)) { S.song.solos = S.song.solos.filter(x => x !== s); S.soloId = null; S.openId = null; saveSoon(); drawTimeline(); renderPanel(); if (!$('#sheet').hidden) closeSheet(); }
+      if (s && confirm(`Supprimer « ${s.name} » ?`) && await Takes.confirmDelete(s.id)) { S.song.solos = S.song.solos.filter(x => x !== s); S.soloId = null; S.openId = null; saveSoon(); drawTimeline(); renderPanel(); if (!$('#sheet').hidden) closeSheet(); }
       break;
     case 'solo-swipe-del': {
-      const so = S.song.solos.find(x => x.id === d.solo); if (!so) break;
+      const so = S.song.solos.find(x => x.id === d.solo); if (!so || !(await Takes.confirmDelete(so.id))) break;
       S.song.solos = S.song.solos.filter(x => x !== so); if (S.soloId === so.id) S.soloId = null; if (S.openId === so.id) S.openId = null;
       saveSoon(); drawTimeline(); renderPanel(); toast('Solo supprimé'); break;
     }
