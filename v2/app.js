@@ -294,7 +294,7 @@ function drawOneTimeline(tl) {
   const dpr = Math.min(window.devicePixelRatio || 1, 16000 / W);
   cv.width = Math.ceil(W * dpr); cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
   const g = cv.getContext('2d'); g.scale(dpr, dpr);
-  const solos = song.solos, act = curSolo();
+  const act = curSolo();
   // fond du solo sélectionné
   if (act) {
     g.fillStyle = '#e5e5f0';
@@ -308,8 +308,8 @@ function drawOneTimeline(tl) {
     let p = 0;
     for (let k = Math.floor(t0 / per2); k < Math.max(Math.floor(t0 / per2) + 1, Math.ceil(t1 / per2)); k++) p = Math.max(p, song.peaks[k] || 0);
     const h = H * (.3 + .4 * p), tm = t0 + per / 2;
-    const inSolo = solos.find(s => tm >= s.start && tm <= s.end);
-    g.fillStyle = inSolo ? (inSolo === act ? '#636487' : '#d3ae80') : '#e3c5a2';
+    // la plage sélectionnée a toujours la couleur de sélection (même si un autre solo la chevauche) ; le reste reste beige
+    g.fillStyle = act && tm >= act.start && tm <= act.end ? '#636487' : '#e3c5a2';
     const x = i * SLOT + (SLOT - BAR_W) / 2, y = mid - h / 2;
     g.beginPath(); g.roundRect(x, y, BAR_W, h, BAR_W / 2); g.fill();   // bâtonnets arrondis, comme sur la maquette
   }
