@@ -152,6 +152,27 @@ function render() {
   document.querySelectorAll('#tabs .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === S.tab));
 }
 
+/* Onglet Solos : lecture sur place (sans ouvrir le morceau) */
+S.lib = null; let libSongId = null;
+const libOn = id => !!(S.lib && S.lib.soloId === id && !audio.paused);
+function syncLibPlay() {
+  document.querySelectorAll('.list.lib .solo-play').forEach(b => { const on = libOn(b.dataset.solo); b.classList.toggle('on', on); b.innerHTML = on ? IC.pause : IC.play; const c = b.closest('.solo'); if (c) c.classList.toggle('sel', !!(S.lib && S.lib.soloId === b.dataset.solo)); });
+}
+function libStop() { if (S.lib) { audio.pause(); S.lib = null; } }
+async function libPlay(songId, soloId) {
+  const sg = S.songs.find(x => x.id === songId), so = sg && sg.solos.find(x => x.id === soloId); if (!so) return;
+  if (S.lib && S.lib.soloId === soloId) { audio.paused ? audio.play().catch(() => {}) : audio.pause(); return; }
+  if (libSongId !== songId || !S.lib) {
+    const blob = await idb('audio', 'readonly', st => st.get(songId));
+    if (!blob) { toast('Fichier audio introuvable'); return; }
+    audio.pause(); if (objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = URL.createObjectURL(blob); audio.src = objectUrl; libSongId = songId;
+  }
+  S.lib = { songId, soloId, start: so.start, end: so.end }; S.tempo = so.tempo || 100; applyRate();
+  const go = () => { audio.currentTime = so.start; audio.play().catch(() => {}); };
+  audio.readyState >= 1 ? go() : audio.addEventListener('loadedmetadata', go, { once: true });
+  syncLibPlay();
+}
 const bySoloOrder = (a, b) => (a.ord ?? 1e9) - (b.ord ?? 1e9) || a.start - b.start;   // ordre choisi à la main (champ « ord », ajouté), sinon par début
 function songChips(song, onlyFav) {
   return song.solos.filter(s => !onlyFav || s.fav).map(s =>
@@ -187,12 +208,14 @@ function renderLibrary() {
         <button class="chip ${S.onlyFav ? 'on' : ''}" data-act="fav-filter">${IC.star(S.onlyFav)} Favoris</button>` +
       instrs.map(i => `<button class="chip ${S.instr === i ? 'on' : ''}" data-act="instr-filter" data-instr="${esc(i)}">${esc(i)}</button>`).join('') + `</div>` +
       (groups.length ? groups.map(({ sg, list }) => `<h3 class="grp">${esc(sg.title)}</h3>` + list.map(s => `
-        <div class="swrap"><div class="solo acc">
+        <div class="swrap"><button class="swipe-del" data-act="lib-del" data-song="${sg.id}" data-solo="${s.id}" aria-label="Supprimer ce solo">${IC.trash}</button>
+        <div class="solo acc${libOn(s.id) ? ' sel' : ''}">
           <div class="solo-head">
-            <button class="solo-play" data-act="open-solo" data-song="${sg.id}" data-solo="${s.id}" aria-label="Ouvrir ce solo">${IC.play}</button>
-            <button class="pick" data-act="open-solo" data-song="${sg.id}" data-solo="${s.id}"><span><b>${esc(s.name)}${s.instrument ? ' · ' + esc(s.instrument) : ''}</b><small>${fmt(s.start)} – ${fmt(s.end)} · ${s.tempo}%${s.soloist ? ' · ' + esc(s.soloist) : ''}</small></span></button>
+            <button class="solo-play${libOn(s.id) ? ' on' : ''}" data-act="lib-play" data-song="${sg.id}" data-solo="${s.id}" aria-label="Jouer ce solo">${libOn(s.id) ? IC.pause : IC.play}</button>
+            <button class="pick" data-act="lib-play" data-song="${sg.id}" data-solo="${s.id}"><span><b>${esc(s.name)}${s.instrument ? ' · ' + esc(s.instrument) : ''}</b><small>${fmt(s.start)} – ${fmt(s.end)} · ${s.tempo}%${s.soloist ? ' · ' + esc(s.soloist) : ''}</small></span></button>
             <button class="star ${s.fav ? 'on' : ''}" data-act="star-lib" data-song="${sg.id}" data-solo="${s.id}" aria-label="Favori">${IC.star(s.fav)}</button>
-          </div></div></div>`).join('')).join('')
+            <button class="icon-sm" data-act="lib-details" data-song="${sg.id}" data-solo="${s.id}" aria-label="Détails du solo">${PENCIL}</button>
+          </div></div>`).join('')).join('')
         : `<div class="empty"><p>Aucun solo ici.<br>Ouvre un morceau et crée tes solos avec « + ».</p></div>`) + `</div>`;
   }
 }
@@ -391,6 +414,7 @@ function loopEnd(r) {
   } else audio.currentTime = r.start;
 }
 function tick() {
+  if (S.lib && !audio.paused && audio.currentTime >= S.lib.end) audio.currentTime = S.lib.start;   // boucle sur la plage
   const r = S.loop && curSolo(), t = audio.currentTime;
   if (r && !audio.paused && !S.waiting && t >= r.end && t < r.end + 0.6) loopEnd(r);
   updatePlayhead();
@@ -399,7 +423,7 @@ function tick() {
 function setPlaying(on) {
   cancelAnimationFrame(raf);
   if (on) { raf = requestAnimationFrame(tick); requestWake(); } else releaseWake();
-  updateTransport();
+  updateTransport(); syncLibPlay();
 }
 async function requestWake() { try { if (navigator.wakeLock && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => wakeLock = null); } } catch {} }
 function releaseWake() { try { wakeLock && wakeLock.release(); } catch {} wakeLock = null; }
@@ -407,6 +431,7 @@ audio.addEventListener('play', () => setPlaying(true));
 audio.addEventListener('pause', () => setPlaying(false));
 audio.addEventListener('seeked', () => S.song && updatePlayhead());
 audio.addEventListener('ended', () => {
+  if (S.lib) { audio.currentTime = S.lib.start; audio.play().catch(() => {}); return; }
   const r = S.loop && curSolo();
   if (r && !S.waiting) { loopEnd(r); if (!S.gap) audio.play().catch(() => {}); } else setPlaying(false);
 });
@@ -430,7 +455,7 @@ async function openSong(id, soloId) {
   const song = S.songs.find(s => s.id === id); if (!song) return;
   const blob = await idb('audio', 'readonly', s => s.get(id));
   if (!blob) { toast('Fichier audio introuvable'); return; }
-  audio.pause(); cancelGap(); S.passes = 0; S.openId = null;
+  S.lib = null; libSongId = null; audio.pause(); cancelGap(); S.passes = 0; S.openId = null;
   if (objectUrl) URL.revokeObjectURL(objectUrl);
   objectUrl = URL.createObjectURL(blob);
   audio.src = objectUrl;
@@ -652,7 +677,14 @@ document.addEventListener('click', async e => {
   switch (d.act) {
     case 'add-song': $('#fileInput').click(); break;
     case 'back': closeSong(); break;
-    case 'tab': S.tab = d.tab; render(); break;
+    case 'tab': libStop(); S.tab = d.tab; render(); break;
+    case 'lib-play': libPlay(d.song, d.solo); break;
+    case 'lib-details': await openSong(d.song); if (S.song) { pickSolo(d.solo, false); openSheet(); } break;
+    case 'lib-del': {
+      const sg = S.songs.find(x => x.id === d.song); if (!sg) break;
+      if (S.lib && S.lib.soloId === d.solo) libStop();
+      sg.solos = sg.solos.filter(x => x.id !== d.solo); saveSongNow(sg); render(); toast('Solo supprimé'); break;
+    }
     case 'fav-filter': S.onlyFav = !S.onlyFav; S.song ? renderPanel() : render(); break;
     case 'instr-filter': S.instr = S.instr === d.instr ? '' : d.instr; render(); break;
     case 'open-song': openSong(d.song); break;
@@ -718,10 +750,10 @@ $('#fileInput').addEventListener('change', e => { const f = [...e.target.files];
   const SW = 80; let g = null, mute = false;
   const closeSwipes = except => document.querySelectorAll('.swrap.swiped').forEach(w => { if (w !== except) { w.classList.remove('swiped'); const c = w.querySelector('.solo'); c.style.transition = ''; c.style.transform = ''; } });
   function begin(t, x, y) {
-    const w = t.closest && t.closest('#soloPanel .swrap');
+    const w = t.closest && t.closest('.swrap');
     closeSwipes(w); if (!w || t.closest('.swipe-del, input, select')) return;
     g = { w, card: w.querySelector('.solo'), x0: x, y0: y, mode: '', open: w.classList.contains('swiped') };
-    g.timer = setTimeout(() => { if (g && !g.mode) startDrag(); }, 380);
+    if (w.closest('#soloPanel')) g.timer = setTimeout(() => { if (g && !g.mode) startDrag(); }, 380);
   }
   function startDrag() {
     g.mode = 'drag'; g.list = [...document.querySelectorAll('#soloPanel .swrap')]; g.idx = g.list.indexOf(g.w); g.t = g.idx;
