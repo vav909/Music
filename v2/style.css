@@ -16,6 +16,7 @@
   --slider: #dfe3e8;
   --soft: #e0cdb6;       /* pastille de lecture d'un solo à l'arrêt */
 }
+body { background: var(--panel); }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { height: 100%; margin: 0; }
 body {
@@ -244,3 +245,69 @@ svg.ic { flex: none; }
 
 /* ---------- Retiré des maquettes : masqué (le code reste, pour plus tard) ---------- */
 .pl-more, details.sec2[data-sec=settings], details.sec2[data-sec=diag] { display: none !important; }
+
+/* ---------- Géométrie exacte des maquettes (mesurée sur les SVG, cadre de 393 px) ---------- */
+#topbar { gap: 0; padding: env(safe-area-inset-top) 0 0; min-height: 61px; height: auto; border-bottom: 1px solid var(--line); margin-bottom: 2px; }
+#backBtn { width: 55px; min-width: 55px; height: 60px; min-height: 60px; }
+#editBtn { width: 55px; min-width: 55px; height: 60px; min-height: 60px; margin-right: 6px; }
+#backBtn:not([hidden]) + #title.is-song { margin-left: -5px; }
+#title.is-song { flex: 1; min-width: 0; }
+#title .hd { gap: 15px; }
+#title .hd-cover { width: 42px; height: 42px; border-radius: 8px; }
+#title .hd-t b { font-size: 17px; font-weight: 700; line-height: 20px; }
+#title .hd-t small { font-size: 13px; line-height: 15px; margin-top: 1px; }
+.player { padding: 14.6px 0 14px; margin-top: 0; }
+.tl-tools { padding: 0 14px 10px 14px; gap: 8px; }
+.tl-tools .tl-time { font-size: 16px; }
+.tl-tools button { width: 48px; min-width: 48px; height: 40px; min-height: 40px; }
+.tl-scroll { margin: 0 6px 0 5px; }
+.pl-ctl { gap: 0; padding: 10px 0 0 10px; }
+.pl-loop { margin: 0; }
+.pl-loop + .pl-seek { margin-left: 19.3px; }
+.pl-play { margin-left: 8.7px; width: 96px; }
+.pl-play + .pl-seek { margin-left: 5.7px; }
+.pl-expand { margin-left: 0; }
+.pl-tempo-row { gap: 18px; padding: 10px 0 0 10px; height: 62px; align-items: flex-start; }
+.pl-sq { width: 52px; height: 52px; min-width: 52px; min-height: 52px; }
+.pl-gap { width: 51px; min-width: 51px; height: 51px; min-height: 51px; margin-right: 11px; }
+.pl-slider { position: relative; height: 52px; min-width: 0; flex: 1; }
+.pl-tlbl { position: absolute; left: 0; top: 9px; height: 16px; line-height: 16px; font-size: 11px; margin: 0; }
+.pl-tempo { position: absolute; left: 0; right: 0; width: auto; top: 19px; height: 22px; }
+.pl-tempo::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; }
+.pl-tempo::-webkit-slider-thumb { margin-top: -9px; }
+.pl-edges { padding-left: 10px; }
+.player.full.has-solo .pl-edges { gap: 10px; padding: 10px 11px 0 10px; }
+.pl-edge { gap: 0; height: 51px; }
+.pl-edge .lbl { font-size: 13.5px; padding-left: 1px; }
+.pl-edge b { font-size: 18px; font-weight: 700; margin-left: 21px; }
+.pl-edge .pl-sq { width: 51px; height: 51px; min-width: 51px; min-height: 51px; margin-left: 18px; }
+.list { padding-top: 10px; }
+.list-title { margin: 0 3px 15px 3px; }
+.list-title b { font-size: 15px; }
+.fav-btn { width: 48px; height: 36px; border-radius: 12px; }
+.solo.acc { border-radius: 16px; margin-bottom: 10px; }
+.solo-head { min-height: 69px; }
+.solo-play { margin: 0 0 0 8.5px; }
+.solo.acc .pick { padding-left: 10.7px; min-height: 69px; }
+.solo.acc .pick b { font-size: 17px; }
+.solo.acc .pick small { font-size: 13px; }
+.fab { bottom: calc(env(safe-area-inset-bottom) + 33px); }
+
+/* Détails du solo : géométrie des maquettes */
+.sheet-top2 { gap: 10px; padding: env(safe-area-inset-top) 0 0; height: auto; min-height: 69px; border-bottom: 1px solid var(--line); align-items: flex-start; margin-bottom: 0; }
+.sheet-top2 > button { width: 55px; min-width: 55px; height: 69px; min-height: 69px; flex: none; }
+.sheet-top2 .t { padding-top: 15.4px; }
+.sheet-top2 .t b { font-size: 17px; line-height: 20px; }
+.sheet-top2 .t small { font-size: 13px; line-height: 15px; margin-top: 5.8px; display: block; }
+.sheet-head { border-bottom: 0; background: var(--bg); }
+.sheet-head .player { padding: 16.6px 0 14.6px; }
+.sheet-head .pl-ctl { padding-top: 8px; }
+.sheet-body { padding: 0 10px 60px; }
+details.sec2 > summary { min-height: 60px; padding: 15px 0 0; font-size: 17px; }
+details.sec2 > summary::after { width: 18px; height: 9px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 9' fill='none' stroke='%23636487' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l8 7 8-7'/%3E%3C/svg%3E"); }
+.sec-body { gap: 0; padding: 0 0 12px; }
+.tr-row { gap: 13px; padding: 0 0 1px; }
+.tr-btn { gap: 15px; font-size: 15.8px; min-height: 44px; }
+#scoreWrap { padding: 0; margin: 0 0 0 -6px; min-height: 0; }
+.reanalyze { gap: 11px; font-size: 13px; margin: 39px auto 0; min-height: 51px; }
+.reanalyze .sq { width: 51px; height: 51px; }

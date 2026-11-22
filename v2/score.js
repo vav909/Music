@@ -289,7 +289,17 @@ function renderScore(sc, W) {
   let unit = (W - 12 - CLEF_W - TS_W - b * 16) / (16 * b);
   if (unit < 5) { b = 1; unit = (W - 12 - CLEF_W - TS_W - 16) / 16; }
   const measW = 16 * unit + 16, nLines = Math.ceil(nM / b), out = [];
-  const lineOf = k => Math.floor(k / b), topOf = li => li * LINE_H + 62;
+  const lineOf = k => Math.floor(k / b);
+  // hauteur de chaque système adaptée aux notes (portée seule = pas de 75 px, comme la maquette)
+  const ext = Array.from({ length: nLines }, () => ({ up: 0, dn: 0 }));
+  ev.forEach(e => {
+    if (e.m === null) return;
+    const li = lineOf(Math.floor(e.p / 16)), sp0 = spell(e.m, flats), yr = 4 * SP - (sp0.dn - 30) * SP / 2;
+    ext[li].up = Math.max(ext[li].up, -(yr - 3.5 * SP) + 6); ext[li].dn = Math.max(ext[li].dn, (yr + 3.5 * SP) - 4 * SP + 6);
+  });
+  const tops = []; let acc = 0;
+  for (let li = 0; li < nLines; li++) { acc += Math.max(22, ext[li].up); tops.push(acc); acc += 4 * SP + Math.max(17, ext[li].dn); }
+  const totalH = acc, topOf = li => tops[li];
   const mx0 = k => 6 + CLEF_W + TS_W + (k - lineOf(k) * b) * measW;
   // positions
   ev.forEach(e => {
@@ -371,7 +381,7 @@ function renderScore(sc, W) {
       else if (!(prv && prv.l === 1)) { const d = nxt ? 6 : -6; out.push(`<line x1="${sx(e)}" x2="${sx(e) + d}" y1="${y2}" y2="${y2}" stroke="${INK}" stroke-width="3"/>`); }
     });
   });
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${nLines * LINE_H}" viewBox="0 0 ${W} ${nLines * LINE_H}" role="img" aria-label="Partition du solo">${out.join('')}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${totalH}" viewBox="0 0 ${W} ${totalH}" role="img" aria-label="Partition du solo">${out.join('')}</svg>`;
 }
 
 /* ---------- 5. Fenêtre « Partition » ---------- */
