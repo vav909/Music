@@ -42,6 +42,7 @@ S.full = (() => { try { return localStorage.getItem('sl-full') === '1'; } catch 
 const svgI = (p, s = 24) => `<svg class="ic" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 const IC = {
   play: svgI('<path d="M8.5 5.5v13l10.5-6.5z"/>', 28),
+  trash: svgI('<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.8 12h9.4l.8-12M10 11v5M14 11v5"/>', 24),
   pause: svgI('<path d="M9 6v12M15 6v12"/>', 28),
   stop: svgI('<rect x="7" y="7" width="10" height="10" rx="1.5"/>', 22),
   chev: svgI('<path d="M6 9l6 6 6-6"/>', 24),
@@ -288,8 +289,8 @@ function soloEditor(act) {
       <input class="txt" id="soloName" value="${esc(act.name)}" placeholder="Nom du solo" aria-label="Nom du solo">
       <input class="txt" id="soloInstr" list="instrs" value="${esc(act.instrument)}" placeholder="Instrument (flûte, sax…)" aria-label="Instrument">
       <input class="txt" id="soloSoloist" value="${esc(act.soloist)}" placeholder="Soliste (ex. Miles Davis)" aria-label="Soliste">
-      <button class="cta2" data-act="sheet-open">Détails du solo<small>Transcription · lecture · plage</small></button>
-      <button class="del" data-act="solo-del">Supprimer ce solo</button>
+      <div class="ed-act"><button class="cta2" data-act="sheet-open">Détails du solo</button>
+      <button class="del" data-act="solo-del" aria-label="Supprimer ce solo">${IC.trash}</button></div>
     </div>`;
 }
 function renderPanel() {
