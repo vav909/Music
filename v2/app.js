@@ -137,7 +137,7 @@ async function importFiles(files) {
 function updateHeader() {
   const song = S.song, t = $('#title');
   t.classList.toggle('is-song', !!song);
-  if (!song) { t.textContent = 'Solo Looper v2'; return; }
+  if (!song) { t.textContent = 'Loops'; return; }
   const sub = [song.artist, song.album].filter(Boolean).join(' · ');
   t.innerHTML = `<span class="hd">${song.cover ? `<img class="hd-cover" src="${esc(song.cover)}" alt="Pochette" onerror="this.outerHTML='<span class=&quot;hd-cover ph&quot;>♪</span>'">` : '<span class="hd-cover ph">♪</span>'}<span class="hd-t"><b>${esc(song.title || 'Sans titre')}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span></span>`;
 }
@@ -145,7 +145,8 @@ function render() {
   const inSong = !!S.song;
   $('#backBtn').hidden = !inSong;
   $('#tabs').hidden = inSong;
-  $('#topAction').hidden = inSong;
+  ['#btnImport', '#btnExport', '#btnFilter'].forEach(id => { $(id).hidden = inSong; });
+  const nf = (S.onlyFav ? 1 : 0) + (S.instr ? 1 : 0) + (S.status !== null ? 1 : 0); $('#btnFilter .fdot').hidden = !nf; $('#btnFilter').setAttribute('aria-expanded', String(!!S.showFilters));
   $('#editBtn').hidden = !inSong;
   updateHeader();
   inSong ? renderSong() : renderLibrary();
@@ -210,12 +211,12 @@ function renderLibrary() {
         ${sg.cover ? `<img class="grp-cover" src="${esc(sg.cover)}" alt="" loading="lazy" onerror="this.outerHTML='<span class=&quot;grp-cover ph&quot;>♪</span>'">` : '<span class="grp-cover ph">♪</span>'}
         <span class="grp-t"><b>${esc(sg.title || 'Sans titre')}</b><small>${[sg.artist, sg.album].filter(Boolean).map(esc).join(' · ')}${sg.artist || sg.album ? ' · ' : ''}${fmt(sg.duration)} · ${sg.solos.length} solo${sg.solos.length > 1 ? 's' : ''}</small></span></button></div>`;
   c.innerHTML = `<div class="list lib">
-      <div class="io"><button data-act="export">${IC.up} Partager mes solos</button><button data-act="import">${IC.down} Importer des solos</button></div>
+      <div class="filter-panel"${S.showFilters ? '' : ' hidden'}>
       ${instrs.length ? `<div class="filters row-instr">` + instrs.map(i => `<button class="chip ${S.instr === i ? 'on' : ''}" data-act="instr-filter" data-instr="${esc(i)}">${esc(i)}</button>`).join('') + `</div>` : ''}
       <div class="filters"><button class="chip ${S.onlyFav ? 'on' : ''}" data-act="fav-filter">${IC.star(S.onlyFav)} Favoris</button><button class="chip ${S.sort === 'alpha' ? 'on' : ''}" data-act="sort" data-sort="alpha">A – Z</button><button class="chip ${S.sort === 'new' ? 'on' : ''}" data-act="sort" data-sort="new">Arrivée</button></div>
-      <div class="filters row-status">` + Object.entries(STATUS).map(([k, v]) => `<button class="chip ${S.status === k ? 'on' : ''}" data-act="status-filter" data-status="${k}"><i class="st-dot st-${k || 'none'}"></i>${v}</button>`).join('') + `</div>` +
+      <div class="filters row-status">` + Object.entries(STATUS).map(([k, v]) => `<button class="chip ${S.status === k ? 'on' : ''}" data-act="status-filter" data-status="${k}"><i class="st-dot st-${k || 'none'}"></i>${v}</button>`).join('') + `</div></div>` +
       (groups.length ? groups.map(({ sg, list }) => `<div class="grp-wrap"><button class="grp-del" data-act="del-song" data-song="${sg.id}" aria-label="Supprimer ce morceau et ses solos">${IC.trash}</button><div class="grp-inner">${songCard(sg)}${list.map(s => soloCard(sg, s)).join('')}</div></div>`).join('')
-        : `<div class="empty"><p>Aucun solo ici.</p></div>`) + `</div>`;
+        : `<div class="empty"><p>Aucun solo ici.</p></div>`) + `</div><button class="fab fab-r" data-act="add-song" aria-label="Importer un morceau" title="Importer un morceau">${IC.plus}</button>`;
 }
 
 /* ---------- Vue morceau ---------- */
@@ -680,6 +681,7 @@ document.addEventListener('click', async e => {
     case 'tab': libStop(); S.tab = d.tab; render(); break;
     case 'solo-status': { const so = S.song.solos.find(x => x.id === d.solo); if (so) { so.status = STATUS_NEXT[so.status || '']; saveSoon(); renderPanel(); toast('Statut : ' + STATUS[so.status].toLowerCase()); } break; }
     case 'lib-status': { const sg = S.songs.find(x => x.id === d.song), so = sg && sg.solos.find(x => x.id === d.solo); if (so) { so.status = STATUS_NEXT[so.status || '']; saveSongNow(sg); render(); toast('Statut : ' + STATUS[so.status].toLowerCase()); } break; }
+    case 'filter-toggle': S.showFilters = !S.showFilters; render(); break;
     case 'status-filter': S.status = S.status === d.status ? null : d.status; render(); break;
     case 'lib-play': libPlay(d.song, d.solo); break;
     case 'lib-details': await openSong(d.song); if (S.song) { pickSolo(d.solo, false); openSheet(); } break;
@@ -810,12 +812,15 @@ function fatal(msg) {
 }
 window.addEventListener('unhandledrejection', e => { console.error(e.reason); toast('Une erreur est survenue, réessaie'); });
 
+const splashT0 = performance.now();
+function hideSplash() { const e = document.getElementById('splash'); if (!e) return; setTimeout(() => { e.classList.add('out'); setTimeout(() => e.remove(), 500); }, Math.max(0, 800 - (performance.now() - splashT0))); }
 (async function init() {
   try {
     db = await openDB();
     S.songs = (await idb('songs', 'readonly', s => s.getAll())) || [];
-    render();
+    render(); hideSplash();
   } catch (e) {
+    hideSplash();
     console.error(e);
     fatal('Le stockage du navigateur est indisponible (navigation privée ?). Ouvre l\u2019app dans une fenêtre normale.');
     return;

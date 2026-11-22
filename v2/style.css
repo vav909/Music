@@ -396,3 +396,21 @@ details[open].tk-off > summary::after, details[open].tk-set > summary::after { t
 .editor .pl-edge { height: 51px; }
 .editor .pl-edge .pl-sq { margin-left: 12px; }
 .editor .pl-edge b { margin-left: 16px; }
+
+/* Loops : barre du haut (importer, partager, filtrer), + en bas à droite, pochettes sur le fond de la page */
+.top-ic { position: relative; width: 48px; min-width: 48px; height: 48px; min-height: 48px; padding: 0; background: transparent; display: grid; place-items: center; flex: none; }
+.top-ic svg { display: block; }
+#btnFilter { margin-right: 8px; }
+.fdot { position: absolute; top: 9px; right: 9px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+.fab svg { display: block; width: 28px; height: 28px; }
+.fab-r { left: auto; right: 16px; transform: none; }
+.filter-panel { padding-bottom: 6px; }
+.grp-head { background: transparent; }
+.grp-t b { color: var(--text); }
+.list.lib { padding-top: 12px; }
+/* Écran d'accueil */
+#splash { position: fixed; inset: 0; z-index: 100; background: #fff; display: grid; place-items: center; transition: opacity .35s; }
+#splash.out { opacity: 0; pointer-events: none; }
+.splash-art { width: min(78vw, 360px); height: auto; animation: splash-in .6s ease-out both; }
+@keyframes splash-in { from { opacity: 0; transform: scale(.92) rotate(-6deg); } to { opacity: 1; transform: none; } }
+#title:not(.is-song) { padding-left: 16px; font-size: 21px; font-weight: 700; }
