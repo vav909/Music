@@ -30,3 +30,6 @@ Si la v2 a besoin d'une autre structure, on passe à un stockage séparé (autre
 
 ## Tests
 `node tests/score.test.js` vise la racine ; `SOLO_DIR=v2 node tests/score.test.js` vise la v2 (idem `meta.test.js` et `compare.js`).
+
+## v2 — Mes prises (enregistrement)
+Les prises (audio personnel) sont stockées dans une base IndexedDB **séparée**, `solo-looper-takes` (magasin `takes` : id, songId, soloId, at, duration, mime, recMime, blob, offsetMs, volTake, volSolo, rate). La base `solo-looper` (partagée avec la v1) n'est ni versionnée ni modifiée. Les prises ne sont jamais exportées avec les repères.

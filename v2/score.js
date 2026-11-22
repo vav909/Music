@@ -2,7 +2,7 @@
 /* Partition du solo sélectionné : analyse de la hauteur (YIN), quantification, affichage SVG,
    correction note par note, export MIDI / MusicXML. Aucune dépendance, fonctionne hors ligne. */
 
-const SH = { sel: null, busy: false, bars: 2, open: { score: true, settings: false, diag: false } };
+const SH = { sel: null, busy: false, bars: 2, open: { score: true, takes: false, settings: false, diag: false } };
 const ALLOWED = [16, 12, 8, 6, 4, 3, 2, 1];             // durées autorisées, en doubles-croches
 const SP = 9, LINE_H = 140, CLEF_W = 36, TS_W = 16;      // interligne, hauteur d'une ligne, largeurs fixes
 const INK = '#1b1918', BLUE = '#636487', MUTED = '#98836a';
@@ -423,6 +423,7 @@ function sheetHTML(solo) {
         <div id="scoreWrap">${sc ? '' : '<p class="hint" id="scMsg">Analyse du solo…</p>'}</div>
         <div id="noteBar"></div>
         <button class="reanalyze" data-act="reanalyze"><span class="sq">${IC.reanalyze}</span><span>Réanalyser</span></button>`)}
+      ${sec('takes', 'Mes prises', Takes.html())}
       ${sec('settings', 'Réglages de la partition', `<div class="sheet-ctl">
           <span class="lbl">Tempo</span><button data-act="bpm" data-d="-1" aria-label="Tempo moins 1">${IC.minus}</button><b id="bpmLbl">${sc ? Math.round(sc.bpm) : '…'}</b><button data-act="bpm" data-d="1" aria-label="Tempo plus 1">${IC.plus}</button>
           <button data-act="bpm-mul" data-f="0.5">÷2</button><button data-act="bpm-mul" data-f="2">×2</button>
@@ -444,7 +445,7 @@ function redrawSheet() {
   const top = sh.scrollTop;
   sh.innerHTML = sheetHTML(solo);
   mountPlayer(sh.querySelector('.player')); drawTimeline(); updateTransport(); updatePlayhead(true);
-  drawSheet(); updateSheetPlay(); sh.scrollTop = top;
+  drawSheet(); updateSheetPlay(); sh.scrollTop = top; Takes.mount();
 }
 // ouvrir / fermer une section : on s'en souvient, et la partition est redessinée à la bonne largeur
 document.addEventListener('toggle', e => {
@@ -554,7 +555,7 @@ function openSheet() {
   redrawSheet(); sh.scrollTop = 0;
   if (solo.score && solo.score.diag) drawSheet(); else if (solo.score && solo.score.edited) drawSheet(); else runAnalysis();
 }
-function closeSheet() { stopScore(); $('#sheet').hidden = true; document.body.style.overflow = ''; audio.pause(); }
+function closeSheet() { Takes.stopAll(); stopScore(); $('#sheet').hidden = true; document.body.style.overflow = ''; audio.pause(); }
 
 function edit(fn) {
   const sc = sc$(); if (!sc || SH.sel === null) return;
