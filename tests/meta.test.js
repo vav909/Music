@@ -1,7 +1,7 @@
 'use strict';
 /* Tests du nettoyage des noms de fichiers et de la recherche de candidats (réseau simulé) :  node tests/meta.test.js */
 const assert = require('assert');
-const Meta = require('../meta.js');
+const Meta = require(require('path').join(__dirname, '..', process.env.SOLO_DIR || '', 'meta.js'));   // SOLO_DIR=v2 pour tester la version en chantier
 let fails = 0;
 const t = async (name, fn) => { try { await fn(); console.log('  ok  ', name); } catch (e) { fails++; console.log('  ÉCHEC', name, '\n       ', e.message); } };
 

@@ -32,6 +32,12 @@ détection automatique des solos (serveur), changement de tonalité.
 `node tests/score.test.js` (notes répétées, attaques, tessiture, sur un signal synthétique `tests/synth.js`), `node tests/meta.test.js` (noms de fichiers, recherche avec réponses simulées),
 `node tests/compare.js [révision]` (avant/après sur le même signal). Le bac à sable bloque iTunes/MusicBrainz : la recherche réelle reste à vérifier sur un téléphone.
 
+## Versions (voir `docs/VERSIONS.md`)
+- Racine = version publiée. `v1/` = copie gelée (ne pas modifier). `v2/` = nouveau graphisme en chantier : **tout le travail de la v2 se fait dans `v2/`**, pas à la racine.
+- Point de retour : branche `archive/v1.0` (ne pas y pousser).
+- Données **partagées** entre les versions (même base IndexedDB `solo-looper`) : ne jamais changer la version de la base ni le nom des magasins, ne jamais supprimer ni renommer un champ, seulement en ajouter.
+- Tests de la v2 : `SOLO_DIR=v2 node tests/score.test.js`.
+
 ## Comment modifier l'app et la mettre en ligne
 1. Modifier les fichiers à la racine. Garder l'app sans dépendance ni étape de build.
 2. Tester en vue téléphone (390×844) avec un vrai MP3 (voir `docs/DEPLOIEMENT.md`).

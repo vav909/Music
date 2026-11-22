@@ -5,7 +5,7 @@ const assert = require('assert');
 const path = require('path');
 const { makeLine, render } = require('./synth.js');
 const { loadScore, score } = require('./harness.js');
-const FILE = path.join(__dirname, '..', 'score.js');
+const FILE = path.join(__dirname, '..', process.env.SOLO_DIR || '', 'score.js');   // SOLO_DIR=v2 pour tester la version en chantier
 let fails = 0;
 const t = async (name, fn) => { try { await fn(); console.log('  ok  ', name); } catch (e) { fails++; console.log('  ÉCHEC', name, '\n       ', e.message); } };
 const rawOf = r => Array.isArray(r) ? r : r.raw;

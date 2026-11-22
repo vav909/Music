@@ -1,0 +1,706 @@
+'use strict';
+/* Solo Looper — repérer, isoler, boucler et ralentir des solos (sans changer la hauteur du son). */
+
+const $ = (s, el = document) => el.querySelector(s);
+const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const COLORS = ['#1f6feb'];       // thème sobre : tout en bleu (le champ color reste stocké)
+const PEAK_STEP = 0.25;            // résolution des pics stockés (secondes)
+const SLOT = 8;                    // largeur d'un petit rectangle + espace (px)
+const BAR_W = 5;
+const ZOOMS = [0.25, 0.5, 1, 2];   // secondes par rectangle
+const STEPS = [1, 0.5, 0.1];       // pas de réglage fin (secondes)
+
+/* ---------- Stockage (IndexedDB) ---------- */
+let db;
+function openDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('solo-looper', 1);
+    r.onupgradeneeded = () => { r.result.createObjectStore('songs', { keyPath: 'id' }); r.result.createObjectStore('audio'); };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+const idb = (store, mode, fn) => new Promise((res, rej) => {
+  const tx = db.transaction(store, mode);
+  const req = fn(tx.objectStore(store));
+  tx.oncomplete = () => res(req && req.result);
+  tx.onerror = () => rej(tx.error);
+});
+const saveSongNow = song => idb('songs', 'readwrite', s => s.put(song));
+let saveTimer;
+function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(() => S.song && saveSongNow(S.song), 300); }
+
+/* ---------- État ---------- */
+const S = {
+  songs: [], tab: 'songs', song: null, soloId: null,
+  loop: true, tempo: 100, zoom: 1, step: 1, gap: 0, ramp: false, passes: 0, waiting: false,
+  onlyFav: false, instr: '', openId: null,   // openId : solo dont les options sont dépliées
+};
+S.full = (() => { try { return localStorage.getItem('sl-full') === '1'; } catch { return false; } })();   // lecteur complet ou allégé
+/* Icônes dessinées en trait fin (épaisseur commune). Les symboles ▶ ⏸ ⏹ ⬆ ⬇ en texte deviennent des emojis colorés sur Android. */
+const svgI = (p, s = 24) => `<svg class="ic" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+const IC = {
+  play: svgI('<path d="M8.5 5.5v13l10.5-6.5z"/>', 28),
+  pause: svgI('<path d="M9 6v12M15 6v12"/>', 28),
+  stop: svgI('<rect x="7" y="7" width="10" height="10" rx="1.5"/>', 22),
+  chev: svgI('<path d="M6 9l6 6 6-6"/>', 24),
+  chevUp: svgI('<path d="M6 15l6-6 6 6"/>', 24),
+  pencil: svgI('<path d="M4.5 19.5l.8-3.6L16.2 5a2 2 0 0 1 2.8 2.8L8.1 18.7zM14.5 6.8l2.7 2.7"/>', 22),
+  loop: svgI('<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"/>', 26),
+  reset: svgI('<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4"/>', 18),
+  back: svgI('<path d="M19 12H5M11 6l-6 6 6 6"/>', 26),
+  close: svgI('<path d="M6 6l12 12M18 6L6 18"/>', 22),
+  plus: svgI('<path d="M12 5v14M5 12h14"/>', 20),
+  minus: svgI('<path d="M5 12h14"/>', 20),
+  target: svgI('<circle cx="12" cy="12" r="5.5"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>', 18),
+  up: svgI('<path d="M12 19V5M6 11l6-6 6 6"/>', 18),
+  down: svgI('<path d="M12 5v14M6 13l6 6 6-6"/>', 18),
+  star: on => svgI('<path d="M12 4.2l2.4 5 5.4.7-4 3.8 1 5.4L12 16.5l-4.8 2.6 1-5.4-4-3.8 5.4-.7z"' + (on ? ' fill="currentColor"' : '') + '/>', 24),
+};
+/* « + » ou « − » entouré de petits tirets, comme un chrono */
+function chronoIcon(sign) {
+  let t = '';
+  for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6, c = Math.cos(a), s = Math.sin(a); t += `<line x1="${(16 + s * 11.6).toFixed(1)}" y1="${(16 - c * 11.6).toFixed(1)}" x2="${(16 + s * 14.6).toFixed(1)}" y2="${(16 - c * 14.6).toFixed(1)}"/>`; }
+  const mid = '<line x1="10.5" y1="16" x2="21.5" y2="16"/>' + (sign === '+' ? '<line x1="16" y1="10.5" x2="16" y2="21.5"/>' : '');
+  return `<svg class="ic" viewBox="0 0 32 32" width="36" height="36" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">${t}${mid}</g></svg>`;
+}
+const audio = new Audio();
+audio.preload = 'auto';
+let objectUrl = null, raf = 0, wakeLock = null;
+const spb = () => ZOOMS[S.zoom];
+const curSolo = () => S.song && S.song.solos.find(s => s.id === S.soloId);
+
+/* ---------- Utilitaires ---------- */
+function fmt(t, dec = false) {
+  t = Math.max(0, t || 0);
+  const m = Math.floor(t / 60), s = t - m * 60;
+  return dec ? `${m}:${s.toFixed(1).padStart(4, '0')}` : `${m}:${String(Math.floor(s)).padStart(2, '0')}`;
+}
+let toastT;
+function toast(msg) {
+  const el = $('#toast'); el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+/* ---------- Analyse audio : durée + niveaux pour les petits rectangles ---------- */
+async function analyze(blob) {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  const ctx = new Ctx();
+  try {
+    const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+    const chans = [...Array(Math.min(2, buf.numberOfChannels))].map((_, i) => buf.getChannelData(i));
+    const win = Math.max(1, Math.floor(buf.sampleRate * PEAK_STEP));
+    const n = Math.ceil(buf.length / win), vals = new Array(n);
+    for (let i = 0; i < n; i++) {
+      let sum = 0, c = 0;
+      const end = Math.min(buf.length, (i + 1) * win);
+      for (let j = i * win; j < end; j += 8) { for (const ch of chans) { sum += ch[j] * ch[j]; c++; } }
+      vals[i] = c ? Math.sqrt(sum / c) : 0;
+    }
+    const sorted = [...vals].sort((a, b) => a - b);
+    const ref = sorted[Math.floor(sorted.length * 0.95)] || 1;
+    return { duration: buf.duration, peaks: vals.map(v => Math.round(Math.min(1, v / ref) * 100) / 100) };
+  } finally { ctx.close(); }
+}
+
+async function importFiles(files) {
+  for (const file of files) {
+    toast(`Analyse de « ${file.name} »…`);
+    try {
+      const { duration, peaks } = await analyze(file);
+      let tags = null; try { tags = await readTags(file); } catch (e) { console.warn('étiquettes illisibles', e); }
+      const song = { id: uid(), title: (tags && tags.title) || Meta.cleanName(file.name).title || file.name.replace(/\.[^.]+$/, ''), file: file.name, duration, peaks, solos: [], added: Date.now(), tagsRead: true };
+      if (tags) {
+        song.tags = { title: tags.title, artist: tags.artist, album: tags.album, hasCover: !!tags.coverBytes };
+        song.artist = tags.artist; song.album = tags.album;
+        if (tags.coverBytes) song.cover = await coverToDataUrl(tags.coverBytes, tags.coverMime);
+      }
+      await idb('audio', 'readwrite', s => s.put(file, song.id));
+      await saveSongNow(song);
+      S.songs.push(song);
+    } catch (e) {
+      console.error(e); toast(`Impossible de lire « ${file.name} »`);
+    }
+  }
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  render();
+  toast('Morceau ajouté');
+}
+
+/* ---------- Navigation / rendu ---------- */
+/* En-tête du morceau : pochette, titre, artiste · album ; le crayon à droite ouvre la modification. */
+function updateHeader() {
+  const song = S.song, t = $('#title');
+  t.classList.toggle('song', !!song);
+  if (!song) { t.textContent = 'Solo Looper v2'; return; }
+  const sub = [song.artist, song.album].filter(Boolean).join(' · ');
+  t.innerHTML = `<span class="hd">${song.cover ? `<img class="hd-cover" src="${esc(song.cover)}" alt="Pochette" onerror="this.outerHTML='<span class=&quot;hd-cover ph&quot;>♪</span>'">` : '<span class="hd-cover ph">♪</span>'}<span class="hd-t"><b>${esc(song.title || 'Sans titre')}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span></span>`;
+}
+function render() {
+  const inSong = !!S.song;
+  $('#backBtn').hidden = !inSong;
+  $('#tabs').hidden = inSong;
+  $('#topAction').hidden = inSong;
+  $('#editBtn').hidden = !inSong;
+  updateHeader();
+  inSong ? renderSong() : renderLibrary();
+  document.querySelectorAll('#tabs .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === S.tab));
+}
+
+function songChips(song, onlyFav) {
+  return song.solos.filter(s => !onlyFav || s.fav).map(s =>
+    `<button class="chip" data-act="open-solo" data-song="${song.id}" data-solo="${s.id}"><i></i>${esc(s.name)}${s.fav ? ' ' + IC.star(true) : ''}</button>`).join('');
+}
+
+function renderLibrary() {
+  const c = $('#content');
+  if (!S.songs.length) {
+    c.innerHTML = `<div class="empty"><div class="big">♪</div><p>Aucun morceau pour l'instant.<br>Ajoute un fichier audio de ton téléphone pour commencer à découper des solos.</p><button class="cta" data-act="add-song">＋ Ajouter un morceau</button></div>`;
+    return;
+  }
+  if (S.tab === 'songs') {
+    const songs = [...S.songs].sort((a, b) => a.title.localeCompare(b.title, 'fr'));
+    c.innerHTML = `<div class="filters"><button class="chip ${S.onlyFav ? 'on' : ''}" data-act="fav-filter">${IC.star(S.onlyFav)} Favoris</button></div>` +
+      songs.filter(sg => !S.onlyFav || sg.solos.some(s => s.fav)).map(sg => `
+      <div class="song">
+        <div class="song-head">
+          ${sg.cover ? `<img class="thumb" src="${esc(sg.cover)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<button class="song-open" data-act="open-song" data-song="${sg.id}"><b>${esc(sg.title)}</b><small>${sg.artist ? esc(sg.artist) + ' · ' : ''}${fmt(sg.duration)} · ${sg.solos.length} solo${sg.solos.length > 1 ? 's' : ''}</small></button>
+          <button class="icon-btn" data-act="del-song" data-song="${sg.id}" aria-label="Supprimer">${IC.close}</button>
+        </div>
+        ${sg.solos.length ? `<div class="chips">${songChips(sg, S.onlyFav)}</div>` : ''}
+      </div>`).join('');
+  } else {
+    const all = S.songs.flatMap(sg => sg.solos.map(s => ({ sg, s })));
+    const instrs = [...new Set(all.map(x => x.s.instrument).filter(Boolean))].sort();
+    const list = all.filter(({ s }) => (!S.onlyFav || s.fav) && (!S.instr || s.instrument === S.instr));
+    c.innerHTML = `<div class="io"><button data-act="export">${IC.up} Partager mes solos</button><button data-act="import">${IC.down} Importer des solos</button></div><div class="filters"><button class="chip ${S.onlyFav ? 'on' : ''}" data-act="fav-filter">★ Favoris</button>` +
+      instrs.map(i => `<button class="chip ${S.instr === i ? 'on' : ''}" data-act="instr-filter" data-instr="${esc(i)}">${esc(i)}</button>`).join('') + `</div>` +
+      (list.length ? `<div class="panel">` + list.map(({ sg, s }) => `
+        <div class="solo"><button class="pick" data-act="open-solo" data-song="${sg.id}" data-solo="${s.id}"><i class="dot"></i><span><b>${esc(s.name)}${s.instrument ? ' · ' + esc(s.instrument) : ''}</b><small>${s.soloist ? esc(s.soloist) + ' · ' : ''}${esc(sg.title)} · ${fmt(s.start)}–${fmt(s.end)}</small></span></button>
+        <button class="star ${s.fav ? 'on' : ''}" data-act="star-lib" data-song="${sg.id}" data-solo="${s.id}" aria-label="Favori">${IC.star(s.fav)}</button></div>`).join('') + `</div>`
+        : `<div class="empty"><p>Aucun solo ici.<br>Ouvre un morceau et crée tes solos avec « Nouveau solo ».</p></div>`);
+  }
+}
+
+/* ---------- Vue morceau ---------- */
+function renderSong() {
+  const c = $('#content');
+  c.innerHTML = `
+  <section class="player${S.full ? ' full' : ''}">
+    <div class="tlbox">${timelineHTML()}${timelineTools()}</div>
+    <div class="ctl">
+      <button class="loop" id="loopBtn" data-act="loop" aria-label="Boucle">${IC.loop}</button>
+      <button class="seekb" data-act="seek-hold" data-d="-1" aria-label="Reculer d’une seconde (appui long : 5 puis 10 secondes)">${chronoIcon('−')}</button>
+      <button class="big" id="playBtn" data-act="play" aria-label="Lecture"></button>
+      <button class="seekb" data-act="seek-hold" data-d="1" aria-label="Avancer d’une seconde (appui long : 5 puis 10 secondes)">${chronoIcon('+')}</button>
+      <button class="expand" data-act="player-full" aria-expanded="${S.full}" aria-label="Tous les réglages de lecture">${IC.chev}</button>
+    </div>
+    <div class="tempo">
+      <button class="full-only" data-act="tempo" data-d="-5" aria-label="Tempo moins 5 pour cent">${IC.minus}</button>
+      <input type="range" id="tempoRange" min="30" max="150" step="10" aria-label="Tempo, de dix en dix">
+      <button class="full-only" data-act="tempo" data-d="5" aria-label="Tempo plus 5 pour cent">${IC.plus}</button>
+      <b id="tempoLbl"></b>
+    </div>
+    <div class="tempo-info"><button id="resetTempo" data-act="tempo-reset">${IC.reset} Tempo original</button></div>
+    <div class="opts"><button id="gapBtn" data-act="gap"></button><button id="rampBtn" data-act="ramp"></button></div>
+  </section>
+  <section class="panel" id="soloPanel"></section>`;
+  mountTimeline($('.player .tlbox'));
+  $('#tempoRange').addEventListener('input', e => setTempo(+e.target.value));
+  drawTimeline(); renderPanel(); updateTransport(); updatePlayhead(true);
+}
+
+/* La timeline existe à deux endroits (page du morceau, détails du solo) : chaque exemplaire se dessine et suit la lecture. */
+const TLS = [];
+const timelineHTML = () => '<div class="tl-scroll"><div class="tl-inner"><canvas></canvas><div class="playhead"></div></div></div>';
+const timelineTools = () => '<div class="tl-tools"><span class="tl-time"></span><button data-act="zoom" data-d="1" aria-label="Dézoomer">' + IC.minus + '</button><button data-act="zoom" data-d="-1" aria-label="Zoomer">' + IC.plus + '</button></div>';
+function mountTimeline(root) {
+  if (!root) return null;
+  const tl = { root, sc: root.querySelector('.tl-scroll'), inner: root.querySelector('.tl-inner'), cv: root.querySelector('canvas'), ph: root.querySelector('.playhead'), lbl: root.querySelector('.tl-time'), touching: false };
+  tl.sc.addEventListener('touchstart', () => tl.touching = true, { passive: true });
+  tl.sc.addEventListener('touchend', () => setTimeout(() => tl.touching = false, 1500), { passive: true });
+  tl.inner.addEventListener('click', e => {
+    const x = e.clientX - tl.inner.getBoundingClientRect().left;
+    audio.currentTime = Math.min(S.song.duration, Math.max(0, x / SLOT * spb()));
+    updatePlayhead();
+  });
+  for (let i = TLS.length - 1; i >= 0; i--) if (!document.contains(TLS[i].root)) TLS.splice(i, 1);
+  TLS.push(tl); return tl;
+}
+const liveTimelines = () => { for (let i = TLS.length - 1; i >= 0; i--) if (!document.contains(TLS[i].root)) TLS.splice(i, 1); return TLS; };
+function drawTimeline() { if (S.song) for (const tl of liveTimelines()) drawOneTimeline(tl); }
+function drawOneTimeline(tl) {
+  const cv = tl.cv; if (!cv) return;
+  const song = S.song, dur = song.duration, per = spb();
+  const nBars = Math.ceil(dur / per), W = nBars * SLOT, H = 104, LBL = 16;
+  const inner = tl.inner; inner.style.width = W + 'px';
+  const dpr = Math.min(window.devicePixelRatio || 1, 16000 / W);
+  cv.width = Math.ceil(W * dpr); cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const g = cv.getContext('2d'); g.scale(dpr, dpr);
+  const solos = song.solos, act = curSolo();
+  // fond du solo sélectionné
+  if (act) {
+    g.fillStyle = 'rgba(31,111,235,.10)';
+    g.fillRect(act.start / per * SLOT, 0, (act.end - act.start) / per * SLOT, H);
+    g.fillStyle = '#1f6feb';
+    g.fillRect(act.start / per * SLOT - 1, 0, 3, H); g.fillRect(act.end / per * SLOT - 2, 0, 3, H);
+  }
+  const mid = (H - LBL) / 2, maxH = H - LBL - 12, per2 = PEAK_STEP;
+  for (let i = 0; i < nBars; i++) {
+    const t0 = i * per, t1 = t0 + per;
+    let p = 0;
+    for (let k = Math.floor(t0 / per2); k < Math.max(Math.floor(t0 / per2) + 1, Math.ceil(t1 / per2)); k++) p = Math.max(p, song.peaks[k] || 0);
+    const h = Math.max(4, p * maxH), tm = t0 + per / 2;
+    const inSolo = solos.find(s => tm >= s.start && tm <= s.end);
+    g.fillStyle = inSolo ? (inSolo === act ? '#1f6feb' : '#6aa5ee') : '#a9cdf7';
+    const x = i * SLOT + (SLOT - BAR_W) / 2, y = mid - h / 2;
+    g.fillRect(x, y, BAR_W, h);
+  }
+  // repères de temps
+  const stepS = [5, 10, 15, 30, 60, 120, 300].find(s => s / per * SLOT >= 56) || 300;
+  g.fillStyle = '#6b7686'; g.font = '11px system-ui'; g.textBaseline = 'bottom';
+  for (let t = 0; t < dur; t += stepS) g.fillText(fmt(t), t / per * SLOT + 3, H - 2);
+}
+
+const PENCIL = IC.pencil;
+/* Options d'un solo (nom, instrument, soliste, plage) : dépliées sous la ligne du solo */
+function soloEditor(act) {
+  return `<div class="editor">
+      <input class="txt" id="soloName" value="${esc(act.name)}" placeholder="Nom du solo" aria-label="Nom du solo">
+      <input class="txt" id="soloInstr" list="instrs" value="${esc(act.instrument)}" placeholder="Instrument (flûte, sax…)" aria-label="Instrument">
+      <input class="txt" id="soloSoloist" value="${esc(act.soloist)}" placeholder="Soliste (ex. Miles Davis)" aria-label="Soliste">
+      ${['start', 'end'].map(w => `<div class="edrow"><span class="lbl">${w === 'start' ? 'Début' : 'Fin'}</span><b data-edge="${w}">${fmt(act[w], true)}</b>
+        <button data-act="nudge" data-w="${w}" data-d="-1" aria-label="Moins">${IC.minus}</button><button data-act="nudge" data-w="${w}" data-d="1" aria-label="Plus">${IC.plus}</button>
+        <button class="here" data-act="here" data-w="${w}">${IC.target} ici</button></div>`).join('')}
+      <button class="cta2" data-act="sheet-open">Détails du solo<small>Partition · transcription · lecture · plage</small></button>
+      <div class="edrow2"><button data-act="step" data-step>Pas : ${S.step} s</button><button class="danger" data-act="solo-del">Supprimer</button></div>
+    </div>`;
+}
+function renderPanel() {
+  const p = $('#soloPanel'); if (!p) return;
+  const song = S.song;
+  const list = song.solos.filter(s => !S.onlyFav || s.fav).sort((a, b) => a.start - b.start);
+  let h = `<button class="newsolo" data-act="solo-new">${IC.plus} Nouveau solo à partir d'ici</button>
+    <h2>Solos de ce morceau <button class="chip ${S.onlyFav ? 'on' : ''}" style="min-height:36px;float:right" data-act="fav-filter" aria-label="Favoris seulement">${IC.star(S.onlyFav)}</button></h2>`;
+  // une ligne : toucher = jouer la plage ; ▾ = options ; crayon (ligne repliée) = page des détails
+  h += list.length ? list.map(s => { const open = S.openId === s.id;
+    return `<div class="solo acc ${s.id === S.soloId ? 'sel' : ''}${open ? ' open' : ''}">
+      <div class="solo-head">
+        <button class="solo-play" data-act="solo-pick" data-solo="${s.id}" aria-label="Jouer ce solo">${IC.play}</button>
+        <button class="pick" data-act="solo-toggle" data-solo="${s.id}" aria-expanded="${open}" aria-label="Champs du solo"><span><b>${esc(s.name)}${s.instrument ? ' · ' + esc(s.instrument) : ''}</b><small>${fmt(s.start)} – ${fmt(s.end)} · ${s.tempo}%${s.soloist ? ' · ' + esc(s.soloist) : ''}</small></span></button>
+        <button class="star ${s.fav ? 'on' : ''}" data-act="star" data-solo="${s.id}" aria-label="Favori">${IC.star(s.fav)}</button>
+        ${open ? '' : `<button class="icon-sm" data-act="solo-details" data-solo="${s.id}" aria-label="Détails du solo">${PENCIL}</button>`}
+        <button class="icon-sm" data-act="solo-toggle" data-solo="${s.id}" aria-expanded="${open}" aria-label="${open ? 'Replier' : 'Déplier'} les options du solo">${open ? IC.chevUp : IC.chev}</button>
+      </div>
+      ${open ? soloEditor(s) : ''}
+    </div>`; }).join('') : `<p class="hint">${song.solos.length ? 'Aucun favori.' : 'Écoute le morceau, puis appuie sur « Nouveau solo » quand un solo commence.'}</p>`;
+  p.innerHTML = h; syncSoloPlay();
+  const act = S.openId && song.solos.find(x => x.id === S.openId);
+  if (!act) return;
+  const sl = $('#soloSoloist'), n = $('#soloName'), i = $('#soloInstr');
+  if (sl) sl.addEventListener('input', () => { act.soloist = sl.value; saveSoon(); });
+  if (n) n.addEventListener('input', () => { act.name = n.value; saveSoon(); const b = document.querySelector('.solo.open .pick b'); if (b) b.textContent = act.name + (act.instrument ? ' · ' + act.instrument : ''); });
+  if (i) i.addEventListener('input', () => { act.instrument = i.value; saveSoon(); });
+}
+/* L'icône de la ligne du solo en cours suit la lecture (▶ / ⏸) */
+function syncSoloPlay() {
+  document.querySelectorAll('.solo-play').forEach(b => { b.innerHTML = b.dataset.solo === S.soloId && !audio.paused ? IC.pause : IC.play; });
+}
+/* Début / fin / pas affichés dans les options et dans la page des détails */
+function syncEdges() {
+  const so = curSolo(); if (!so) return;
+  document.querySelectorAll('[data-edge]').forEach(b => { b.textContent = fmt(so[b.dataset.edge], true); });
+  document.querySelectorAll('[data-step]').forEach(b => { b.textContent = 'Pas : ' + S.step + ' s'; });
+}
+
+/* ---------- Lecture ---------- */
+function updateTransport() {
+  const pb = $('#playBtn'); if (!pb) return;
+  pb.innerHTML = (audio.paused && !S.waiting) ? IC.play : IC.pause;
+  $('#loopBtn').classList.toggle('on', S.loop);
+  $('#tempoRange').value = S.tempo; $('#tempoLbl').textContent = S.tempo + ' %';
+  syncSoloPlay();
+  $('#resetTempo').disabled = S.tempo === 100;
+  const g = $('#gapBtn'), rb = $('#rampBtn');
+  if (g) { g.textContent = 'Pause entre passages : ' + (S.gap ? S.gap + ' s' : 'non'); g.classList.toggle('on', S.gap > 0); }
+  if (rb) { rb.textContent = 'Montée progressive : ' + (S.ramp ? 'oui' : 'non'); rb.classList.toggle('on', S.ramp); }
+}
+function updatePlayhead(forceScroll) {
+  if (!S.song) return;
+  const x = audio.currentTime / spb() * SLOT, label = `${fmt(audio.currentTime)} / ${fmt(S.song.duration)}`;
+  for (const tl of liveTimelines()) {
+    tl.ph.style.transform = `translateX(${x}px)`;
+    if (tl.lbl) tl.lbl.textContent = label;
+    const sc = tl.sc;
+    if (forceScroll || ((!audio.paused) && !tl.touching)) {
+      if (forceScroll || x < sc.scrollLeft + 24 || x > sc.scrollLeft + sc.clientWidth - 60) sc.scrollLeft = Math.max(0, x - sc.clientWidth * 0.3);
+    }
+  }
+}
+let gapTimers = [], beepCtx = null;
+function ensureBeep() {
+  try { beepCtx = beepCtx || new (window.AudioContext || window.webkitAudioContext)(); if (beepCtx.state === 'suspended') beepCtx.resume(); } catch {}
+}
+function beep(hi) {
+  try {
+    ensureBeep();
+    const o = beepCtx.createOscillator(), g = beepCtx.createGain(), t = beepCtx.currentTime;
+    o.frequency.value = hi ? 1320 : 880;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    o.connect(g).connect(beepCtx.destination); o.start(t); o.stop(t + 0.1);
+  } catch {}
+}
+function cancelGap() { gapTimers.forEach(clearTimeout); gapTimers = []; S.waiting = false; }
+function loopEnd(r) {
+  S.passes++;
+  if (S.ramp && S.tempo < 100) { setTempo(S.tempo + 5, false); toast(`Passage ${S.passes + 1} · ${S.tempo} %`); }
+  if (S.gap > 0) {
+    S.waiting = true; audio.pause(); audio.currentTime = r.start; updateTransport();
+    const n = Math.max(1, Math.round(S.gap));
+    for (let i = 0; i < n; i++) gapTimers.push(setTimeout(() => beep(i === n - 1), S.gap * 1000 * i / n));
+    gapTimers.push(setTimeout(() => { S.waiting = false; audio.play().catch(() => {}); }, S.gap * 1000));
+  } else audio.currentTime = r.start;
+}
+function tick() {
+  const r = S.loop && curSolo(), t = audio.currentTime;
+  if (r && !audio.paused && !S.waiting && t >= r.end && t < r.end + 0.6) loopEnd(r);
+  updatePlayhead();
+  raf = requestAnimationFrame(tick);
+}
+function setPlaying(on) {
+  cancelAnimationFrame(raf);
+  if (on) { raf = requestAnimationFrame(tick); requestWake(); } else releaseWake();
+  updateTransport();
+}
+async function requestWake() { try { if (navigator.wakeLock && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => wakeLock = null); } } catch {} }
+function releaseWake() { try { wakeLock && wakeLock.release(); } catch {} wakeLock = null; }
+audio.addEventListener('play', () => setPlaying(true));
+audio.addEventListener('pause', () => setPlaying(false));
+audio.addEventListener('seeked', () => S.song && updatePlayhead());
+audio.addEventListener('ended', () => {
+  const r = S.loop && curSolo();
+  if (r && !S.waiting) { loopEnd(r); if (!S.gap) audio.play().catch(() => {}); } else setPlaying(false);
+});
+function applyRate() {
+  audio.playbackRate = S.tempo / 100;
+  audio.preservesPitch = true; audio.mozPreservesPitch = true; audio.webkitPreservesPitch = true; // tempo sans changer la hauteur
+}
+function setTempo(v, persist = true) {
+  S.tempo = Math.max(25, Math.min(150, Math.round(v)));
+  applyRate();
+  const s = curSolo(); if (s && persist) { s.tempo = S.tempo; saveSoon(); renderPanel(); }
+  updateTransport();
+}
+function play() {
+  ensureBeep();
+  if (S.waiting) { cancelGap(); updateTransport(); return; }   // appui pendant la pause : on reste en pause
+  audio.paused ? audio.play().catch(() => {}) : audio.pause();
+}
+
+async function openSong(id, soloId) {
+  const song = S.songs.find(s => s.id === id); if (!song) return;
+  const blob = await idb('audio', 'readonly', s => s.get(id));
+  if (!blob) { toast('Fichier audio introuvable'); return; }
+  audio.pause(); cancelGap(); S.passes = 0; S.openId = null;
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  objectUrl = URL.createObjectURL(blob);
+  audio.src = objectUrl;
+  S.song = song; S.soloId = null; S.onlyFav = false;
+  applyRate();
+  render();
+  if (soloId) pickSolo(soloId, true);
+}
+function closeSong() {
+  audio.pause(); cancelGap(); S.song && saveSongNow(S.song);
+  S.song = null; S.soloId = null; S.openId = null; S.onlyFav = false;
+  render();
+}
+function pickSolo(id, autoplay) {
+  const s = S.song.solos.find(x => x.id === id); if (!s) return;
+  cancelGap(); S.passes = 0; S.soloId = id; if (S.openId !== id) S.openId = null; S.tempo = s.tempo || 100; applyRate();   // choisir un autre solo replie les options
+  audio.currentTime = s.start;
+  drawTimeline(); renderPanel(); updateTransport(); updatePlayhead(true);
+  if (autoplay) audio.play().catch(() => {});
+}
+function newSolo() {
+  const song = S.song, t = audio.currentTime;
+  const start = Math.min(t, Math.max(0, song.duration - 2));
+  const solo = {
+    id: uid(), name: `Solo ${song.solos.length + 1}`, instrument: song.solos.length ? song.solos[song.solos.length - 1].instrument : '',
+    start, end: Math.min(song.duration, start + 20), tempo: S.tempo, fav: false, color: COLORS[song.solos.length % COLORS.length],
+  };
+  song.solos.push(solo); saveSoon();
+  pickSolo(solo.id, false); S.openId = solo.id; renderPanel();   // les options se déplient pour régler la fin
+  toast('Solo créé : place la fin avec « ⌖ ici »');
+}
+function editEdge(w, newT) {
+  const s = curSolo(); if (!s) return;
+  const dur = S.song.duration;
+  if (w === 'start') s.start = Math.max(0, Math.min(newT, s.end - 0.5));
+  else s.end = Math.min(dur, Math.max(newT, s.start + 0.5));
+  s.start = Math.round(s.start * 10) / 10; s.end = Math.round(s.end * 10) / 10;
+  saveSoon();
+  audio.currentTime = w === 'start' ? s.start : Math.max(s.start, s.end - 2);  // on réécoute le bord modifié
+  drawTimeline(); renderPanel(); syncEdges(); updatePlayhead(true);
+}
+
+/* ---------- Artiste, album, pochette (recherche automatique, saisie manuelle en secours) ---------- */
+const cleanTerm = t => Meta.cleanName(t, true).title;   // garde « 26-2 », retire numéro de piste, remaster, feat, année
+// étiquettes du fichier (titre, artiste, album, pochette) lues une fois pour les morceaux déjà importés
+async function applyFileTags(song) {
+  if (song.tagsRead) return false;
+  song.tagsRead = true;
+  const blob = await idb('audio', 'readonly', st => st.get(song.id));
+  const tags = blob ? await readTags(blob) : null;
+  if (!tags) { saveSoon(); return false; }
+  song.tags = { title: tags.title, artist: tags.artist, album: tags.album, hasCover: !!tags.coverBytes };
+  let got = false;
+  if (tags.artist && !song.artist) { song.artist = tags.artist; got = true; }
+  if (tags.album && !song.album) { song.album = tags.album; got = true; }
+  if (tags.coverBytes && !song.cover) { song.cover = await coverToDataUrl(tags.coverBytes, tags.coverMime); got = !!song.cover || got; }
+  saveSoon(); return got;
+}
+const CH = { hits: [], term: '', busy: false };
+function renderChooser(msg) {
+  const el = $('#chooser'); el.hidden = false; document.body.style.overflow = 'hidden';
+  el.innerHTML = `<div class="sheet-top"><button class="icon-btn" data-act="ch-close" aria-label="Fermer">${IC.back}</button><b>Choisir le bon morceau</b></div>
+    <div class="ch-search"><input class="txt" id="chTerm" value="${esc(CH.term)}" placeholder="Artiste et titre" aria-label="Recherche"><button data-act="ch-search">Chercher</button></div>
+    <p class="hint">${esc(msg || 'Touche la bonne ligne : titre, artiste, album et pochette seront repris. Vérifie l’album et la durée. Tu peux corriger la recherche.')}</p>
+    <div class="ch-list">${CH.hits.map((h, i) => `<button class="ch-hit" data-act="ch-pick" data-i="${i}">
+      <img src="${esc(h.thumb || '')}" alt="" onerror="this.style.visibility='hidden'"><span><b>${esc(h.title)}</b><small>${esc(h.artist)}</small><small>${esc(h.album || '')}${h.year ? ' · ' + esc(h.year) : ''}${h.duration ? ' · ' + fmt(h.duration) : ''}${h.sameLength ? ' · même durée' : ''} · ${esc(h.source)}</small></span></button>`).join('')}</div>`;
+  const inp = $('#chTerm'); if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); chSearch(inp.value); } });
+}
+function closeChooser() { $('#chooser').hidden = true; if ($('#sheet').hidden && $('#edit').hidden) document.body.style.overflow = ''; }
+/* Modifier le morceau : titre, artiste (origine), album, pochette, identification automatique */
+function editHTML(song) {
+  return `<div class="sheet-top"><button class="icon-btn" data-act="edit-close" aria-label="Fermer">${IC.back}</button><b>Modifier le morceau</b></div>
+    <div class="edit-body">
+      <div class="edit-cover">${song.cover ? `<img class="cover" src="${esc(song.cover)}" alt="Pochette" onerror="this.outerHTML='<div class=&quot;cover ph&quot;>♪</div>'">` : '<div class="cover ph">♪</div>'}
+        <button data-act="cover-file">Changer la pochette…</button></div>
+      <label class="fld">Titre du morceau<input class="txt" id="songTitle" value="${esc(song.title)}" placeholder="Titre"></label>
+      <label class="fld">Artiste (origine)<input class="txt" id="songArtist" value="${esc(song.artist)}" placeholder="Artiste"></label>
+      <label class="fld">Album<input class="txt" id="songAlbum" value="${esc(song.album)}" placeholder="Album"></label>
+      <button class="cta2" data-act="lookup">Identifier le morceau</button>
+      <p class="hint">« Identifier » cherche le titre, l’artiste, l’album et la pochette ; tu choisis ensuite le bon résultat.</p>
+      <button data-act="edit-close">Terminé</button>
+    </div>`;
+}
+function renderEdit() {
+  const song = S.song, el = $('#edit'); if (!song || el.hidden) return;
+  el.innerHTML = editHTML(song);
+  for (const [id, key] of [['songTitle', 'title'], ['songArtist', 'artist'], ['songAlbum', 'album']]) {
+    const i = $('#' + id); if (i) i.addEventListener('input', () => { song[key] = i.value; saveSoon(); updateHeader(); });
+  }
+}
+function openEdit() { if (!S.song) return; $('#edit').hidden = false; document.body.style.overflow = 'hidden'; renderEdit(); }
+function closeEdit() { $('#edit').hidden = true; if ($('#sheet').hidden && $('#chooser').hidden) document.body.style.overflow = ''; updateHeader(); if (S.song) renderPanel(); }
+function refreshMeta() { updateHeader(); renderEdit(); renderPanel(); }
+/* auto : recherche à partir du titre / nom de fichier / artiste ; sinon les mots saisis, tels quels */
+async function chSearch(term, auto) {
+  const song = S.song; if (!song || CH.busy) return;
+  CH.busy = true; CH.term = term; CH.hits = []; renderChooser('Recherche en cours…');
+  try {
+    const r = await Meta.searchAll({ title: (song.tags && song.tags.title) || song.title, artist: (song.tags && song.tags.artist) || song.artist, album: (song.tags && song.tags.album) || song.album, file: song.file || song.title, duration: song.duration, query: auto ? '' : term });
+    CH.hits = r.candidates; if (auto && r.queries[0]) CH.term = r.queries[0].text;
+    song.lookupLog = { term: CH.term, at: new Date().toISOString(), n: r.candidates.length, errors: r.errors, top: r.candidates.slice(0, 5).map(h => ({ source: h.source, track: h.title, artist: h.artist, album: h.album, score: h.score })) };
+    saveSoon();
+    const down = r.errors.length >= 2;
+    renderChooser(r.candidates.length ? '' : down ? 'Recherche impossible (hors ligne ou service indisponible). Ferme et saisis à la main.' : 'Rien trouvé : change les mots de la recherche, ou ferme et saisis à la main.');
+  } catch (e) {
+    song.lookupLog = { term, at: new Date().toISOString(), error: String(e && e.message || e) }; saveSoon();
+    renderChooser('Recherche impossible (hors ligne ?). Ferme et saisis l’artiste et l’album à la main.');
+  }
+  CH.busy = false;
+}
+async function lookup() {
+  const song = S.song; if (!song) return;
+  let got = false; try { got = await applyFileTags(song); } catch (e) { console.warn(e); }
+  if (got) { refreshMeta(); toast('Infos lues dans le fichier MP3'); }
+  CH.hits = []; CH.term = '';
+  await chSearch('', true);
+}
+async function pickHit(i) {
+  const song = S.song, h = CH.hits[i]; if (!song || !h) return;
+  song.title = h.title || song.title; song.artist = h.artist || song.artist; song.album = h.album || song.album;
+  if (song.lookupLog) song.lookupLog.chosen = { source: h.source, track: h.title, artist: h.artist, album: h.album };
+  saveSongNow(song); closeChooser(); refreshMeta(); toast('Titre, artiste et album mis à jour');
+  if (!h.cover) return;
+  try { song.cover = await Meta.coverToDataURL(h.cover); }                  // copie réduite, disponible hors ligne
+  catch { song.cover = h.cover; }                                            // service sans CORS : on garde l’adresse
+  await saveSongNow(song); if (S.song === song) refreshMeta();
+}
+async function setCoverFile(file) {
+  const song = S.song; if (!song || !file) return;
+  try { song.cover = await Meta.coverToDataURL(file); await saveSongNow(song); if (S.song === song) refreshMeta(); toast('Pochette enregistrée'); }
+  catch { toast('Image illisible'); }
+}
+$('#coverInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) setCoverFile(f); });
+
+/* ---------- Diagnostic : un petit fichier (sans audio) à m'envoyer pour comprendre les erreurs ---------- */
+async function diagnostic() {
+  const song = S.song, solo = curSolo(); if (!song) { toast('Ouvre un morceau d’abord'); return; }
+  const sc = solo && solo.score;
+  const rep = {
+    app: 'solo-looper-diag', version: 3, date: new Date().toISOString(), ua: navigator.userAgent, viewport: [innerWidth, innerHeight],
+    song: { title: song.title, file: song.file || null, artist: song.artist || '', album: song.album || '', duration: song.duration,
+      coverKind: !song.cover ? 'aucune' : /^data:/.test(song.cover) ? 'intégrée au fichier' : 'en ligne', tags: song.tags || null, lookup: song.lookupLog || null },
+    solo: solo ? { range: solo.range || null, top: !!solo.top, name: solo.name, instrument: solo.instrument, soloist: solo.soloist, start: solo.start, end: solo.end, tempoPct: solo.tempo } : null,
+    score: sc ? { bpm: sc.bpm, lead: sc.lead, swing: !!sc.swing, tapped: !!sc.tapped, flats: !!sc.flats, edited: !!sc.edited, diag: sc.diag || null, raw: sc.raw, notes: sc.notes } : null,
+  };
+  const file = new File([JSON.stringify(rep, null, 1)], 'diagnostic-solo-looper.json', { type: 'application/json' });
+  try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'Diagnostic Solo Looper' }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name;
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast('Diagnostic enregistré : envoie-le moi (aucun audio dedans)');
+}
+
+/* ---------- Partage : seulement les repères, jamais l'audio ---------- */
+const norm = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
+function exportSolos() {
+  const songs = S.songs.filter(sg => sg.solos.length).map(sg => ({
+    title: sg.title, file: sg.file || '', artist: sg.artist || '', album: sg.album || '',
+    solos: sg.solos.map(({ name, instrument, soloist, start, end, tempo, fav, score, range, top }) => ({ name, instrument, soloist: soloist || '', start, end, tempo, fav, score, range, top })),
+  }));
+  if (!songs.length) { toast('Aucun solo à partager pour l\u2019instant'); return; }
+  const blob = new Blob([JSON.stringify({ app: 'solo-looper', version: 1, songs }, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'mes-solos.json';
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast('Fichier prêt : il contient les repères, pas l\u2019audio');
+}
+async function importSolos(file) {
+  let n = 0, skipped = 0;
+  try {
+    const data = JSON.parse(await file.text());
+    if (data.app !== 'solo-looper' || !Array.isArray(data.songs)) throw new Error('format');
+    for (const it of data.songs) {
+      const sg = S.songs.find(x => norm(x.title) === norm(it.title) || (it.file && x.file && norm(x.file) === norm(it.file)));
+      if (!sg) { skipped += it.solos.length; continue; }
+      sg.artist = sg.artist || it.artist; sg.album = sg.album || it.album;
+      for (const so of it.solos) {
+        if (sg.solos.some(x => Math.abs(x.start - so.start) < 0.2 && Math.abs(x.end - so.end) < 0.2)) continue;
+        sg.solos.push({ id: uid(), color: COLORS[0], fav: false, tempo: 100, ...so }); n++;
+      }
+      await saveSongNow(sg);
+    }
+  } catch { toast('Fichier non reconnu'); return; }
+  render();
+  toast(`${n} solo${n > 1 ? 's' : ''} importé${n > 1 ? 's' : ''}` + (skipped ? ` · ${skipped} ignoré${skipped > 1 ? 's' : ''} (morceau absent de ta bibliothèque)` : ''));
+}
+$('#jsonInput').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importSolos(f); });
+
+/* ---------- Avance / recul : un appui = 1 s ; en maintenant 2 s, par 5 s ; après 4 s, par 10 s ---------- */
+function seekBy(dt) {
+  if (!S.song) return;
+  audio.currentTime = Math.max(0, Math.min(S.song.duration, audio.currentTime + dt)); updatePlayhead();
+}
+const HOLD = { timer: null };
+function stopHold() { clearTimeout(HOLD.timer); HOLD.timer = null; }
+function startHold(dir) {
+  stopHold(); const t0 = performance.now();
+  seekBy(dir);
+  const step = () => {
+    const held = performance.now() - t0, n = held >= 4000 ? 10 : held >= 2000 ? 5 : 1;
+    seekBy(dir * n); HOLD.timer = setTimeout(step, n === 1 ? 300 : 450);
+  };
+  HOLD.timer = setTimeout(step, 450);
+}
+document.addEventListener('pointerdown', e => { const b = e.target.closest('[data-act=seek-hold]'); if (!b) return; e.preventDefault(); startHold(+b.dataset.d); });
+for (const ev of ['pointerup', 'pointercancel', 'blur']) window.addEventListener(ev, stopHold);
+document.addEventListener('contextmenu', e => { if (e.target.closest('[data-act=seek-hold]')) e.preventDefault(); });
+
+/* ---------- Pédale Bluetooth / clavier ---------- */
+document.addEventListener('keydown', e => {
+  if (!S.song || /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+  if (e.code === 'Space' || e.key === 'ArrowDown' || e.key === 'PageDown') { e.preventDefault(); play(); }
+  else if (e.key === 'ArrowUp' || e.key === 'PageUp') { e.preventDefault(); const so = curSolo(); audio.currentTime = so ? so.start : 0; updatePlayhead(true); }
+});
+
+/* ---------- Actions (délégation des clics) ---------- */
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const d = b.dataset, s = curSolo();
+  switch (d.act) {
+    case 'add-song': $('#fileInput').click(); break;
+    case 'back': closeSong(); break;
+    case 'tab': S.tab = d.tab; render(); break;
+    case 'fav-filter': S.onlyFav = !S.onlyFav; S.song ? renderPanel() : render(); break;
+    case 'instr-filter': S.instr = S.instr === d.instr ? '' : d.instr; render(); break;
+    case 'open-song': openSong(d.song); break;
+    case 'open-solo': openSong(d.song, d.solo); break;
+    case 'del-song':
+      if (confirm('Supprimer ce morceau et tous ses solos ?')) {
+        await idb('songs', 'readwrite', st => st.delete(d.song)); await idb('audio', 'readwrite', st => st.delete(d.song));
+        S.songs = S.songs.filter(x => x.id !== d.song); render();
+      } break;
+    case 'star-lib': { const sg = S.songs.find(x => x.id === d.song), so = sg.solos.find(x => x.id === d.solo); so.fav = !so.fav; saveSongNow(sg); render(); break; }
+    case 'star': { const so = S.song.solos.find(x => x.id === d.solo); so.fav = !so.fav; saveSoon(); renderPanel(); break; }
+    case 'play': play(); break;
+    case 'seek': audio.currentTime = Math.max(0, Math.min(S.song.duration, audio.currentTime + +d.d)); updatePlayhead(); break;
+    case 'loop': S.loop = !S.loop; updateTransport(); break;
+    case 'tempo': setTempo(S.tempo + +d.d); break;
+    case 'tempo-reset': setTempo(100); break;
+    case 'seek-hold': if (e.detail === 0 && S.song) seekBy(+d.d); break;   // clavier / lecteur d'écran ; au doigt, voir les événements pointer
+    case 'player-full': {
+      S.full = !S.full; try { localStorage.setItem('sl-full', S.full ? '1' : '0'); } catch {}
+      const pl = $('.player'); if (pl) pl.classList.toggle('full', S.full); b.setAttribute('aria-expanded', S.full); break;
+    }
+    case 'edit-song': openEdit(); break;
+    case 'edit-close': closeEdit(); break;
+    case 'zoom': S.zoom = Math.max(0, Math.min(ZOOMS.length - 1, S.zoom + +d.d)); drawTimeline(); updatePlayhead(true); break;
+    case 'solo-pick':
+      if (S.soloId === d.solo) {                       // déjà choisi : pause / reprise ; hors de la plage, on repart du début
+        if (audio.paused && s && (audio.currentTime < s.start || audio.currentTime >= s.end - 0.05)) audio.currentTime = s.start;
+        play();
+      } else pickSolo(d.solo, true);
+      break;
+    case 'solo-new': newSolo(); break;
+    case 'solo-toggle': if (S.openId === d.solo) { S.openId = null; renderPanel(); } else { pickSolo(d.solo, false); S.openId = d.solo; renderPanel(); } break;
+    case 'solo-details': pickSolo(d.solo, false); openSheet(); break;
+    case 'solo-del':
+      if (s && confirm(`Supprimer « ${s.name} » ?`)) { S.song.solos = S.song.solos.filter(x => x !== s); S.soloId = null; S.openId = null; saveSoon(); drawTimeline(); renderPanel(); if (!$('#sheet').hidden) closeSheet(); }
+      break;
+    case 'here': if (s) editEdge(d.w, audio.currentTime); break;
+    case 'nudge': if (s) editEdge(d.w, s[d.w] + +d.d * S.step); break;
+    case 'gap': ensureBeep(); S.gap = [0, 1, 2, 4][([0, 1, 2, 4].indexOf(S.gap) + 1) % 4]; updateTransport(); break;
+    case 'ramp': S.ramp = !S.ramp; S.passes = 0; if (S.ramp && S.tempo >= 100) setTempo(60, false); updateTransport(); break;
+    case 'lookup': lookup(); break;
+    case 'cover-file': $('#coverInput').click(); break;
+    case 'diag': diagnostic(); break;
+    case 'ch-close': closeChooser(); break;
+    case 'ch-search': { const i = $('#chTerm'); if (i) chSearch(i.value.trim()); break; }
+    case 'ch-pick': pickHit(+d.i); break;
+    case 'export': exportSolos(); break;
+    case 'import': $('#jsonInput').click(); break;
+    case 'step': S.step = STEPS[(STEPS.indexOf(S.step) + 1) % STEPS.length]; syncEdges(); break;
+  }
+});
+$('#fileInput').addEventListener('change', e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) importFiles(f); });
+window.addEventListener('beforeunload', () => S.song && saveSongNow(S.song));
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !audio.paused) requestWake(); });
+
+/* ---------- Démarrage ---------- */
+function fatal(msg) {
+  $('#content').innerHTML = `<div class="fatal"><p><b>L\u2019application n\u2019a pas pu démarrer.</b></p><p>${esc(msg)}</p><button onclick="location.reload()">Réessayer</button></div>`;
+}
+window.addEventListener('unhandledrejection', e => { console.error(e.reason); toast('Une erreur est survenue, réessaie'); });
+
+(async function init() {
+  try {
+    db = await openDB();
+    S.songs = (await idb('songs', 'readonly', s => s.getAll())) || [];
+    render();
+  } catch (e) {
+    console.error(e);
+    fatal('Le stockage du navigateur est indisponible (navigation privée ?). Ouvre l\u2019app dans une fenêtre normale.');
+    return;
+  }
+  if ('serviceWorker' in navigator) {
+    const had = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!had) return;                                   // première installation : rien à recharger
+      if (!S.song) location.reload(); else toast('Nouvelle version prête : elle s\u2019applique à la prochaine ouverture');
+    });
+  }
+})();

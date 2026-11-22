@@ -5,8 +5,9 @@ const { execSync } = require('child_process'), fs = require('fs'), os = require(
 const { makeLine, render } = require('./synth.js');
 const { loadScore, score } = require('./harness.js');
 const rev = process.argv[2] || 'main', old = path.join(os.tmpdir(), 'score.avant.js');
-fs.writeFileSync(old, execSync(`git show ${rev}:score.js`, { cwd: path.join(__dirname, '..') }));
-const neu = path.join(__dirname, '..', 'score.js');
+const dir = process.env.SOLO_DIR || '';
+fs.writeFileSync(old, execSync(`git show ${rev}:${dir ? dir + '/' : ''}score.js`, { cwd: path.join(__dirname, '..') }));
+const neu = path.join(__dirname, '..', dir, 'score.js');
 (async () => {
   const cases = [['flûte seule', false, 1], ['accompagnement léger', true, 1], ['accompagnement fort ×2', true, 2], ['accompagnement très fort ×3', true, 3]];
   for (const swing of [true, false]) for (const [name, accomp, gain] of cases) {

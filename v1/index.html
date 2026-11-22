@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <title>Solo Looper v1</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="topbar">
+    <button id="backBtn" class="icon-btn" data-act="back" aria-label="Retour" hidden><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg></button>
+    <h1 id="title">Solo Looper</h1>
+    <button id="editBtn" class="icon-btn" data-act="edit-song" aria-label="Modifier le morceau" hidden><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 19.5l.8-3.6L16.2 5a2 2 0 0 1 2.8 2.8L8.1 18.7zM14.5 6.8l2.7 2.7"/></svg></button>
+    <button id="topAction" class="icon-btn" data-act="add-song" aria-label="Ajouter un morceau"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+  </header>
+
+  <main id="content"></main>
+
+  <nav id="tabs">
+    <button data-act="tab" data-tab="songs" class="tab on">Morceaux</button>
+    <button data-act="tab" data-tab="solos" class="tab">Solos</button>
+  </nav>
+
+  <input type="file" id="jsonInput" accept="application/json,.json" hidden>
+  <input type="file" id="fileInput" accept="audio/*,.mp3,.m4a,.wav,.ogg,.flac" multiple hidden>
+  <datalist id="instrs">
+    <option value="Flûte"><option value="Saxophone"><option value="Trompette">
+    <option value="Trombone"><option value="Clarinette"><option value="Hautbois">
+    <option value="Basson"><option value="Cor"><option value="Piano">
+    <option value="Guitare"><option value="Violon"><option value="Voix">
+  </datalist>
+  <div id="toast" role="status"></div>
+  <noscript><p class="fatal">Cette application a besoin de JavaScript.</p></noscript>
+  <div id="sheet" hidden></div>
+  <input type="file" id="coverInput" accept="image/*" hidden>
+  <div id="edit" hidden></div>
+  <div id="chooser" hidden></div>
+  <script src="tags.js"></script>
+  <script src="meta.js"></script>
+  <script src="app.js"></script>
+  <script src="score.js"></script>
+</body>
+</html>
