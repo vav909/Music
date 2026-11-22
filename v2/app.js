@@ -6,8 +6,8 @@ const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(3
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const COLORS = ['#1f6feb'];       // thème sobre : tout en bleu (le champ color reste stocké)
 const PEAK_STEP = 0.25;            // résolution des pics stockés (secondes)
-const SLOT = 8;                    // largeur d'un petit rectangle + espace (px)
-const BAR_W = 5;
+const SLOT = 6;                    // largeur d'un petit rectangle + espace (px)
+const BAR_W = 2.43;
 const ZOOMS = [0.25, 0.5, 1, 2];   // secondes par rectangle
 const STEPS = [1, 0.5, 0.1];       // pas de réglage fin (secondes)
 
@@ -269,15 +269,15 @@ function drawOneTimeline(tl) {
     const t0 = i * per, t1 = t0 + per;
     let p = 0;
     for (let k = Math.floor(t0 / per2); k < Math.max(Math.floor(t0 / per2) + 1, Math.ceil(t1 / per2)); k++) p = Math.max(p, song.peaks[k] || 0);
-    const h = Math.max(4, p * maxH), tm = t0 + per / 2;
+    const h = Math.max(maxH * .33, p * maxH), tm = t0 + per / 2;
     const inSolo = solos.find(s => tm >= s.start && tm <= s.end);
     g.fillStyle = inSolo ? (inSolo === act ? '#636487' : '#d3ae80') : '#e3c5a2';
     const x = i * SLOT + (SLOT - BAR_W) / 2, y = mid - h / 2;
-    g.fillRect(x, y, BAR_W, h);
+    g.beginPath(); g.roundRect(x, y, BAR_W, h, BAR_W / 2); g.fill();   // bâtonnets arrondis, comme sur la maquette
   }
   // repères de temps
   const stepS = [5, 10, 15, 30, 60, 120, 300].find(s => s / per * SLOT >= 56) || 300;
-  g.fillStyle = '#98836a'; g.font = '11px system-ui'; g.textBaseline = 'bottom';
+  g.fillStyle = '#98836a'; g.font = '11px Inter, system-ui'; g.textBaseline = 'bottom';
   if (full) for (let t = 0; t < dur; t += stepS) g.fillText(fmt(t), t / per * SLOT + 3, H - 2);
 }
 
