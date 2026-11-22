@@ -35,7 +35,7 @@ function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(() => S.so
 const S = {
   songs: [], tab: 'songs', song: null, soloId: null,
   loop: true, tempo: 100, zoom: 1, step: 1, gap: 0, ramp: false, passes: 0, waiting: false,
-  onlyFav: false, instr: '', openId: null,   // openId : solo dont les options sont dépliées
+  onlyFav: false, instr: '', openId: null, sort: (() => { try { return localStorage.getItem('sl-sort') === 'new' ? 'new' : 'alpha'; } catch { return 'alpha'; } })(),   // openId : solo dont les options sont dépliées
 };
 S.full = (() => { try { return localStorage.getItem('sl-full') === '1'; } catch { return false; } })();   // lecteur complet ou allégé
 /* Icônes dessinées en trait fin (épaisseur commune). Les symboles ▶ ⏸ ⏹ ⬆ ⬇ en texte deviennent des emojis colorés sur Android. */
@@ -152,6 +152,7 @@ function render() {
   document.querySelectorAll('#tabs .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === S.tab));
 }
 
+const bySoloOrder = (a, b) => (a.ord ?? 1e9) - (b.ord ?? 1e9) || a.start - b.start;   // ordre choisi à la main (champ « ord », ajouté), sinon par début
 function songChips(song, onlyFav) {
   return song.solos.filter(s => !onlyFav || s.fav).map(s =>
     `<button class="chip" data-act="open-solo" data-song="${song.id}" data-solo="${s.id}"><i></i>${esc(s.name)}${s.fav ? ' ' + IC.star(true) : ''}</button>`).join('');
@@ -176,14 +177,23 @@ function renderLibrary() {
       </div>`).join('');
   } else {
     const all = S.songs.flatMap(sg => sg.solos.map(s => ({ sg, s })));
-    const instrs = [...new Set(all.map(x => x.s.instrument).filter(Boolean))].sort();
-    const list = all.filter(({ s }) => (!S.onlyFav || s.fav) && (!S.instr || s.instrument === S.instr));
-    c.innerHTML = `<div class="io"><button data-act="export">${IC.up} Partager mes solos</button><button data-act="import">${IC.down} Importer des solos</button></div><div class="filters"><button class="chip ${S.onlyFav ? 'on' : ''}" data-act="fav-filter">★ Favoris</button>` +
+    const instrs = [...new Set(all.map(x => x.s.instrument).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'fr'));
+    if (S.instr && !instrs.includes(S.instr)) S.instr = '';
+    const songs = [...S.songs].sort(S.sort === 'new' ? (x, y) => (x.added || 0) - (y.added || 0) : (x, y) => (x.title || '').localeCompare(y.title || '', 'fr'));
+    const groups = songs.map(sg => ({ sg, list: sg.solos.filter(s => (!S.onlyFav || s.fav) && (!S.instr || s.instrument === S.instr)).sort(bySoloOrder) })).filter(g => g.list.length);
+    c.innerHTML = `<div class="list lib">
+      <div class="io"><button data-act="export">${IC.up} Partager mes solos</button><button data-act="import">${IC.down} Importer des solos</button></div>
+      <div class="filters"><button class="chip ${S.sort === 'alpha' ? 'on' : ''}" data-act="sort" data-sort="alpha">A – Z</button><button class="chip ${S.sort === 'new' ? 'on' : ''}" data-act="sort" data-sort="new">Arrivée</button><span class="sep"></span>
+        <button class="chip ${S.onlyFav ? 'on' : ''}" data-act="fav-filter">${IC.star(S.onlyFav)} Favoris</button>` +
       instrs.map(i => `<button class="chip ${S.instr === i ? 'on' : ''}" data-act="instr-filter" data-instr="${esc(i)}">${esc(i)}</button>`).join('') + `</div>` +
-      (list.length ? `<div class="panel">` + list.map(({ sg, s }) => `
-        <div class="solo"><button class="pick" data-act="open-solo" data-song="${sg.id}" data-solo="${s.id}"><i class="dot"></i><span><b>${esc(s.name)}${s.instrument ? ' · ' + esc(s.instrument) : ''}</b><small>${s.soloist ? esc(s.soloist) + ' · ' : ''}${esc(sg.title)} · ${fmt(s.start)}–${fmt(s.end)}</small></span></button>
-        <button class="star ${s.fav ? 'on' : ''}" data-act="star-lib" data-song="${sg.id}" data-solo="${s.id}" aria-label="Favori">${IC.star(s.fav)}</button></div>`).join('') + `</div>`
-        : `<div class="empty"><p>Aucun solo ici.<br>Ouvre un morceau et crée tes solos avec « Nouveau solo ».</p></div>`);
+      (groups.length ? groups.map(({ sg, list }) => `<h3 class="grp">${esc(sg.title)}</h3>` + list.map(s => `
+        <div class="swrap"><div class="solo acc">
+          <div class="solo-head">
+            <button class="solo-play" data-act="open-solo" data-song="${sg.id}" data-solo="${s.id}" aria-label="Ouvrir ce solo">${IC.play}</button>
+            <button class="pick" data-act="open-solo" data-song="${sg.id}" data-solo="${s.id}"><span><b>${esc(s.name)}${s.instrument ? ' · ' + esc(s.instrument) : ''}</b><small>${fmt(s.start)} – ${fmt(s.end)} · ${s.tempo}%${s.soloist ? ' · ' + esc(s.soloist) : ''}</small></span></button>
+            <button class="star ${s.fav ? 'on' : ''}" data-act="star-lib" data-song="${sg.id}" data-solo="${s.id}" aria-label="Favori">${IC.star(s.fav)}</button>
+          </div></div></div>`).join('')).join('')
+        : `<div class="empty"><p>Aucun solo ici.<br>Ouvre un morceau et crée tes solos avec « + ».</p></div>`) + `</div>`;
   }
 }
 
@@ -296,11 +306,12 @@ function soloEditor(act) {
 function renderPanel() {
   const p = $('#soloPanel'); if (!p) return;
   const song = S.song;
-  const list = song.solos.filter(s => !S.onlyFav || s.fav).sort((a, b) => a.start - b.start);
+  const list = song.solos.filter(s => !S.onlyFav || s.fav).sort(bySoloOrder);
   let h = `<div class="list-title"><b>Mes solos</b><button class="fav-btn${S.onlyFav ? ' on' : ''}" data-act="fav-filter" aria-label="Favoris seulement">${IC.star(S.onlyFav)}</button></div>`;
   // une carte : pastille ▶ = jouer la plage ; le nom (ou ▾) déplie les champs ; crayon (carte repliée) = page des détails
   h += list.length ? list.map(s => { const open = S.openId === s.id;
-    return `<div class="solo acc ${s.id === S.soloId ? 'sel' : ''}${open ? ' open' : ''}">
+    return `<div class="swrap" data-solo="${s.id}"><button class="swipe-del" data-act="solo-swipe-del" data-solo="${s.id}" aria-label="Supprimer ce solo">${IC.trash}</button>
+    <div class="solo acc ${s.id === S.soloId ? 'sel' : ''}${open ? ' open' : ''}">
       <div class="solo-head">
         <button class="solo-play" data-act="solo-pick" data-solo="${s.id}" aria-label="Jouer ce solo">${IC.play}</button>
         <button class="pick" data-act="solo-toggle" data-solo="${s.id}" aria-expanded="${open}" aria-label="Champs du solo"><span><b>${esc(s.name)}${s.instrument ? ' · ' + esc(s.instrument) : ''}</b><small>${fmt(s.start)} – ${fmt(s.end)} · ${s.tempo}%${s.soloist ? ' · ' + esc(s.soloist) : ''}</small></span></button>
@@ -309,7 +320,7 @@ function renderPanel() {
         <button class="icon-sm" data-act="solo-toggle" data-solo="${s.id}" aria-expanded="${open}" aria-label="${open ? 'Replier' : 'Déplier'} les champs du solo">${open ? IC.chevUp : IC.chev}</button>
       </div>
       ${open ? soloEditor(s) : ''}
-    </div>`; }).join('') : `<p class="hint">${song.solos.length ? 'Aucun favori.' : 'Écoute le morceau, puis touche + quand un solo commence.'}</p>`;
+    </div></div>`; }).join('') : `<p class="hint">${song.solos.length ? 'Aucun favori.' : 'Écoute le morceau, puis touche + quand un solo commence.'}</p>`;
   p.innerHTML = h; syncSoloPlay();
   const act = S.openId && song.solos.find(x => x.id === S.openId);
   if (!act) return;
@@ -447,6 +458,7 @@ function newSolo() {
     id: uid(), name: `Solo ${song.solos.length + 1}`, instrument: song.solos.length ? song.solos[song.solos.length - 1].instrument : '',
     start, end: Math.min(song.duration, start + 20), tempo: S.tempo, fav: false, color: COLORS[song.solos.length % COLORS.length],
   };
+  if (song.solos.some(x => x.ord != null)) solo.ord = Math.max(...song.solos.map(x => x.ord ?? 0)) + 1;
   song.solos.push(solo); saveSoon();
   pickSolo(solo.id, false); S.openId = solo.id; renderPanel();   // les options se déplient pour régler la fin
   toast('Solo créé : place la fin avec « ⌖ ici »');
@@ -679,6 +691,12 @@ document.addEventListener('click', async e => {
     case 'solo-del':
       if (s && confirm(`Supprimer « ${s.name} » ?`)) { S.song.solos = S.song.solos.filter(x => x !== s); S.soloId = null; S.openId = null; saveSoon(); drawTimeline(); renderPanel(); if (!$('#sheet').hidden) closeSheet(); }
       break;
+    case 'solo-swipe-del': {
+      const so = S.song.solos.find(x => x.id === d.solo); if (!so) break;
+      S.song.solos = S.song.solos.filter(x => x !== so); if (S.soloId === so.id) S.soloId = null; if (S.openId === so.id) S.openId = null;
+      saveSoon(); drawTimeline(); renderPanel(); toast('Solo supprimé'); break;
+    }
+    case 'sort': S.sort = d.sort; try { localStorage.setItem('sl-sort', S.sort); } catch {} render(); break;
     case 'here': if (s) editEdge(d.w, audio.currentTime); break;
     case 'nudge': if (s) editEdge(d.w, s[d.w] + +d.d * S.step); break;
     case 'gap': ensureBeep(); S.gap = [0, 1, 2, 4][([0, 1, 2, 4].indexOf(S.gap) + 1) % 4]; updateTransport(); break;
@@ -695,6 +713,58 @@ document.addEventListener('click', async e => {
   }
 });
 $('#fileInput').addEventListener('change', e => { const f = [...e.target.files]; e.target.value = ''; if (f.length) importFiles(f); });
+/* Liste « Mes solos » : appui long puis glisser = changer l'ordre ; balayage vers la gauche = corbeille */
+(() => {
+  const SW = 80; let g = null, mute = false;
+  const closeSwipes = except => document.querySelectorAll('.swrap.swiped').forEach(w => { if (w !== except) { w.classList.remove('swiped'); const c = w.querySelector('.solo'); c.style.transition = ''; c.style.transform = ''; } });
+  function begin(t, x, y) {
+    const w = t.closest && t.closest('#soloPanel .swrap');
+    closeSwipes(w); if (!w || t.closest('.swipe-del, input, select')) return;
+    g = { w, card: w.querySelector('.solo'), x0: x, y0: y, mode: '', open: w.classList.contains('swiped') };
+    g.timer = setTimeout(() => { if (g && !g.mode) startDrag(); }, 380);
+  }
+  function startDrag() {
+    g.mode = 'drag'; g.list = [...document.querySelectorAll('#soloPanel .swrap')]; g.idx = g.list.indexOf(g.w); g.t = g.idx;
+    g.h = g.w.offsetHeight + 10; g.w.classList.add('dragging'); g.list.forEach(w => { if (w !== g.w) w.style.transition = 'transform .15s'; });
+    if (navigator.vibrate) navigator.vibrate(15);
+  }
+  function move(x, y, ev) {
+    if (!g) return; const dx = x - g.x0, dy = y - g.y0;
+    if (!g.mode) {
+      if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) { g.mode = 'swipe'; clearTimeout(g.timer); }
+      else if (Math.abs(dy) > 8) { g.mode = 'scroll'; clearTimeout(g.timer); }
+    }
+    if (g.mode === 'swipe') { const tx = Math.max(-SW - 24, Math.min(0, (g.open ? -SW : 0) + dx)); g.card.style.transition = 'none'; g.card.style.transform = `translateX(${tx}px)`; g.tx = tx; }
+    else if (g.mode === 'drag') {
+      if (ev && ev.cancelable) ev.preventDefault();
+      g.w.style.transform = `translateY(${dy}px)`;
+      g.t = Math.max(0, Math.min(g.list.length - 1, g.idx + Math.round(dy / g.h)));
+      g.list.forEach((w, k) => { if (w === g.w) return; w.style.transform = g.idx < g.t && k > g.idx && k <= g.t ? `translateY(${-g.h}px)` : g.t < g.idx && k >= g.t && k < g.idx ? `translateY(${g.h}px)` : ''; });
+    }
+  }
+  function end() {
+    if (!g) return; clearTimeout(g.timer); const m = g.mode; if (m === 'swipe' || m === 'drag') { mute = true; setTimeout(() => { mute = false; }, 60); }
+    if (m === 'swipe') {
+      const open = (g.tx ?? 0) < -SW / 2; g.card.style.transition = 'transform .18s'; g.card.style.transform = open ? `translateX(${-SW}px)` : ''; g.w.classList.toggle('swiped', open);
+    } else if (m === 'drag') {
+      const ids = g.list.map(w => w.dataset.solo), moved = ids.splice(g.idx, 1)[0]; ids.splice(g.t, 0, moved);
+      if (g.t !== g.idx && S.song) {
+        const full = [...S.song.solos].sort(bySoloOrder), shown = new Set(ids), slots = full.map((x, i) => shown.has(x.id) ? i : -1).filter(i => i >= 0);
+        slots.forEach((slot, k) => { full[slot] = S.song.solos.find(x => x.id === ids[k]); });
+        full.forEach((x, i) => { x.ord = i; }); saveSoon();
+      }
+      renderPanel();
+    }
+    g = null;
+  }
+  document.addEventListener('touchstart', e => { if (e.touches.length === 1) begin(e.target, e.touches[0].clientX, e.touches[0].clientY); else if (g) { clearTimeout(g.timer); g = null; } }, { passive: true });
+  document.addEventListener('touchmove', e => move(e.touches[0].clientX, e.touches[0].clientY, e), { passive: false });
+  document.addEventListener('touchend', end); document.addEventListener('touchcancel', end);
+  document.addEventListener('mousedown', e => { if (e.button === 0) begin(e.target, e.clientX, e.clientY); });
+  document.addEventListener('mousemove', e => move(e.clientX, e.clientY, e));
+  document.addEventListener('mouseup', end);
+  document.addEventListener('click', e => { if (mute) { e.stopPropagation(); e.preventDefault(); } }, true);
+})();
 window.addEventListener('beforeunload', () => S.song && saveSongNow(S.song));
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && !audio.paused) requestWake(); });
 

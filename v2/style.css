@@ -316,3 +316,18 @@ details.sec2 > summary::after { width: 18px; height: 9px; background-image: url(
 .ed-act { display: flex; gap: 10px; }
 .ed-act .cta2 { flex: 1; height: 52px; min-height: 52px; border-radius: 26px; }
 .ed-act .del { width: 52px; min-width: 52px; height: 52px; min-height: 52px; padding: 0; border-radius: 16px; background: var(--panel2); color: var(--text); display: grid; place-items: center; }
+
+/* Solos : balayage (corbeille) et déplacement */
+.swrap { position: relative; margin-bottom: 10px; border-radius: 16px; overflow: hidden; touch-action: pan-y; -webkit-touch-callout: none; }
+.swrap .solo.acc { position: relative; z-index: 1; margin-bottom: 0; touch-action: pan-y; }
+.swipe-del { position: absolute; right: 0; top: 0; bottom: 0; width: 80px; min-width: 0; border-radius: 0; background: var(--tint); color: var(--accent); display: grid; place-items: center; }
+.swrap.dragging { z-index: 20; overflow: visible; box-shadow: 0 6px 18px rgba(27, 25, 24, .18); transition: none; opacity: .97; }
+.swrap.dragging .solo.acc { transform: scale(1.01); }
+/* Onglet Solos : cartes groupées par morceau */
+.list.lib { padding-top: 6px; }
+.list.lib .io { padding: 6px 0 0; }
+.list.lib .filters { padding: 12px 0 4px; flex-wrap: wrap; overflow: visible; }
+.list.lib .filters .sep { flex: 1 0 100%; height: 0; }
+.list.lib .chip { background: var(--bg); }
+.list.lib .chip.on { background: var(--accent); }
+h3.grp { margin: 18px 3px 10px; font-size: 15px; font-weight: 700; color: var(--text); }
