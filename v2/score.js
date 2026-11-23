@@ -2,7 +2,7 @@
 /* Partition du solo sélectionné : analyse de la hauteur (YIN), quantification, affichage SVG,
    correction note par note, export MIDI / MusicXML. Aucune dépendance, fonctionne hors ligne. */
 
-const SH = { sel: null, busy: false, bars: 2, open: { score: true, takes: false, settings: false, diag: false } };
+const SH = { sel: null, busy: false, bars: 2, open: { range: true, score: true, takes: false, settings: false, diag: false } };
 const ALLOWED = [16, 12, 8, 6, 4, 3, 2, 1];             // durées autorisées, en doubles-croches
 const SP = 9, LINE_H = 140, CLEF_W = 36, TS_W = 16;      // interligne, hauteur d'une ligne, largeurs fixes
 const INK = '#1b1918', BLUE = '#636487', MUTED = '#98836a';
@@ -419,6 +419,7 @@ function sheetHTML(solo) {
       ${playerHTML()}
     </div>
     <div class="sheet-body">
+      ${sec('range', 'Début et fin', `<div class="ed-edges">${edgeRow('start')}${edgeRow('end')}</div>`)}
       ${sec('score', 'Transcription', `<div class="tr-row"><button class="tr-btn" data-act="score-play" id="spBtn">${scoreBtn(PL.on && !PL.mix, 'score', 'Jouer la partition')}</button><button class="tr-btn" data-act="score-play" data-mix="1" id="spMix">${scoreBtn(PL.on && PL.mix, 'mix', 'Avec le solo')}</button></div>
         <div id="scoreWrap">${sc ? '' : '<p class="hint" id="scMsg">Analyse du solo…</p>'}</div>
         <div id="noteBar"></div>
@@ -437,7 +438,8 @@ function sheetHTML(solo) {
       ${sec('diag', 'Diagnostic', `${diagSummary(solo)}
         <div class="sheet-exp"><button data-act="diag">Envoyer un diagnostic</button></div>
         <p class="hint">Petit fichier sans audio (réglages, hauteurs détectées, notes) à m’envoyer pour comprendre les erreurs de la partition.</p>`)}
-    </div>`;
+    </div>
+    <nav class="sheet-bar" aria-label="Partition et enregistrement"><button data-act="sb-score" aria-label="Partition">${ICON_STAFF}<span>Partition</span></button><button data-act="sb-rec" id="sbRec" aria-label="Enregistrer ma prise">${TKI.mic}<span>Enregistrer</span></button></nav>`;
 }
 /* Affiche la page entière (sections, timeline, partition) */
 function redrawSheet() {
@@ -635,6 +637,12 @@ document.addEventListener('click', e => {
   switch (d.act) {
     case 'sheet-open': openSheet(); break;
     case 'sheet-close': closeSheet(); break;
+    case 'sb-score': case 'sb-rec': {
+      const sec = document.querySelector(`details[data-sec=${d.act === 'sb-score' ? 'score' : 'takes'}]`), sh = $('#sheet'), head = sh.querySelector('.sheet-head');
+      if (sec) { sec.open = true; sec.style.scrollMarginTop = (head ? head.offsetHeight : 0) + 'px'; sec.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      if (d.act === 'sb-rec') tkRecord();
+      break;
+    }
     case 'note': SH.sel = +d.ni; if (sc) playTone(sc.notes[SH.sel].m); drawSheet(); break;
     case 'bpm': changeBpm(sc.bpm + +d.d); break;
     case 'tap': tapTempo(); break;
