@@ -424,3 +424,40 @@ details[open].tk-off > summary::after, details[open].tk-set > summary::after { t
 .grp-solos { display: grid; gap: 0; padding-top: 8px; }
 .grp-solos > .swrap:last-child { margin-bottom: 0; }
 .grp-head:not(:last-child) { margin-bottom: 0; }
+
+/* ---------- Harmonisation : mêmes espaces (12 px), mêmes pictos (24 px, trait 1,5), étoiles en contour violet ---------- */
+:root { --gap: 12px; }
+.swrap { margin-bottom: var(--gap); }
+.grp-wrap { margin-bottom: var(--gap); }
+.grp-inner { padding: var(--gap); }
+.grp-head { min-height: 48px; }
+.grp-solos { padding-top: var(--gap); }
+.grp-open { min-height: 56px; padding: 0; }
+.list.lib .filters, .list.lib .io { padding: var(--gap) 0 0; }
+.list.lib { padding: var(--gap) var(--gap) 130px; }
+.list.lib .filter-panel { padding-bottom: var(--gap); }
+.solo.acc .star, .solo.acc .icon-sm, .stat { width: 40px; min-width: 40px; }
+.solo.acc .star, .solo.acc .star.on { color: var(--accent); }
+.solo.acc .star svg.ic, .icon-sm svg.ic, .grp-chev svg.ic, .tk-del svg.ic { width: 24px; height: 24px; }
+.fav-btn, .fav-btn.on { color: var(--accent); }
+.chip svg.ic { color: var(--accent); }
+.chip.on svg.ic { color: var(--accent-ink); }
+.top-ic { width: 44px; min-width: 44px; }
+.fab { width: 60px; height: 60px; }
+.editor { gap: var(--gap); padding: 4px var(--gap) var(--gap); }
+.ed-edges { gap: var(--gap); }
+.ed-edges .pl-edge { height: 51px; }
+.ed-edges .pl-edge .pl-sq { margin-left: 12px; }
+.ed-edges .pl-edge b { margin-left: 16px; }
+.sec-body { gap: var(--gap); }
+select.txt.sel { background: var(--panel2); border: 0; border-radius: 14px; min-height: 52px; appearance: none; -webkit-appearance: none; padding: 0 40px 0 12px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23636487' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; background-size: 24px; font: inherit; color: var(--text); }
+.editor input[hidden] { display: none; }
+/* Menu fixe du bas des détails du solo */
+.sheet-bar { position: sticky; bottom: 0; z-index: 8; display: flex; gap: var(--gap); padding: 10px var(--gap) calc(10px + env(safe-area-inset-bottom)); background: var(--bg); border-top: 1px solid var(--line); }
+.sheet-bar button { flex: 1; height: 56px; min-height: 56px; border-radius: 28px; background: var(--tint); color: var(--accent); display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 15px; font-weight: 600; }
+.sheet-bar button svg { width: 26px; height: 26px; }
+.sheet-bar button.on { background: var(--accent); color: var(--accent-ink); }
+.sheet-body { padding-bottom: 24px; }
+#noteBar { bottom: 76px; }
+#sheet { padding-bottom: 0; }
+#sheet > .sheet-body { flex: 1 0 auto; }

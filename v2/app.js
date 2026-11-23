@@ -47,7 +47,7 @@ const IC = {
   stop: svgI('<rect x="7" y="7" width="10" height="10" rx="1.5"/>', 22),
   chev: svgI('<path d="M6 9l6 6 6-6"/>', 24),
   chevUp: svgI('<path d="M6 15l6-6 6 6"/>', 24),
-  pencil: svgI('<path d="M4.5 19.5l.8-3.6L16.2 5a2 2 0 0 1 2.8 2.8L8.1 18.7zM14.5 6.8l2.7 2.7"/>', 22),
+  pencil: svgI('<path d="M4.5 19.5l.8-3.6L16.2 5a2 2 0 0 1 2.8 2.8L8.1 18.7zM14.5 6.8l2.7 2.7"/>', 24),
   loop: svgI('<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"/>', 26),
   reset: svgI('<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4"/>', 18),
   back: svgI('<path d="M19 12H5M11 6l-6 6 6 6"/>', 26),
@@ -316,10 +316,22 @@ const edgeRow = w => { const n = w === 'start' ? 'Début' : 'Fin'; return `<div 
     <button class="pl-sq" data-act="nudge" data-w="${w}" data-d="-1" aria-label="${n} moins">${IC.minus}</button>
     <button class="pl-sq" data-act="nudge" data-w="${w}" data-d="1" aria-label="${n} plus">${IC.plus}</button>
     <button class="pl-sq here" data-act="here" data-w="${w}" aria-label="${n} : prendre la position de lecture">${IC.target}</button></div>`; };
+/* Instruments : liste stricte (jazz) + « Autre… » pour une saisie libre */
+const INSTRUMENTS = ['Flûte', 'Piccolo', 'Saxophone soprano', 'Saxophone alto', 'Saxophone ténor', 'Saxophone baryton', 'Trompette', 'Bugle', 'Trombone', 'Clarinette', 'Piano', 'Orgue', 'Guitare', 'Vibraphone', 'Violon', 'Voix', 'Contrebasse'];
+const INSTR_ALIAS = { flute: 'Flûte', saxophone: 'Saxophone alto', sax: 'Saxophone alto', saxalto: 'Saxophone alto', saxtenor: 'Saxophone ténor', saxsoprano: 'Saxophone soprano', saxbaryton: 'Saxophone baryton', trumpet: 'Trompette', clarinet: 'Clarinette', voice: 'Voix', bass: 'Contrebasse', basse: 'Contrebasse' };
+function canonInstr(v) {
+  const n = norm(v); if (!n) return '';
+  return INSTRUMENTS.find(i => norm(i) === n) || INSTR_ALIAS[n] || String(v).trim();
+}
+function instrSelectHTML(cur) {
+  const c = canonInstr(cur), known = INSTRUMENTS.includes(c), other = !!c && !known;
+  return `<select class="txt sel" id="soloInstr" aria-label="Instrument"><option value="">Instrument…</option>${INSTRUMENTS.map(i => `<option${i === c ? ' selected' : ''}>${i}</option>`).join('')}<option value="__other"${other ? ' selected' : ''}>Autre…</option></select>
+      <input class="txt" id="soloInstrOther" value="${other ? esc(c) : ''}" placeholder="Autre instrument" aria-label="Autre instrument"${other ? '' : ' hidden'}>`;
+}
 function soloEditor(act) {
   return `<div class="editor">
       <input class="txt" id="soloName" value="${esc(act.name)}" placeholder="Nom du solo" aria-label="Nom du solo">
-      <input class="txt" id="soloInstr" list="instrs" value="${esc(act.instrument)}" placeholder="Instrument (flûte, sax…)" aria-label="Instrument">
+      ${instrSelectHTML(act.instrument)}
       <input class="txt" id="soloSoloist" value="${esc(act.soloist)}" placeholder="Soliste (ex. Miles Davis)" aria-label="Soliste">
       <div class="ed-edges">${edgeRow('start')}${edgeRow('end')}</div>
       <div class="ed-act"><button class="cta2" data-act="sheet-open">Détails du solo</button>
@@ -351,7 +363,13 @@ function renderPanel() {
   const sl = $('#soloSoloist'), n = $('#soloName'), i = $('#soloInstr');
   if (sl) sl.addEventListener('input', () => { act.soloist = sl.value; saveSoon(); });
   if (n) n.addEventListener('input', () => { act.name = n.value; saveSoon(); const b = document.querySelector('.solo.open .pick b'); if (b) b.textContent = act.name + (act.instrument ? ' · ' + act.instrument : ''); });
-  if (i) i.addEventListener('input', () => { act.instrument = i.value; saveSoon(); });
+  const io = $('#soloInstrOther'), upd = () => { const b = document.querySelector('.solo.open .pick b'); if (b) b.textContent = act.name + (act.instrument ? ' · ' + act.instrument : ''); };
+  if (i) i.addEventListener('change', () => {
+    if (i.value === '__other') { io.hidden = false; io.focus(); act.instrument = canonInstr(io.value); }
+    else { io.hidden = true; act.instrument = i.value; }
+    saveSoon(); upd();
+  });
+  if (io) io.addEventListener('input', () => { act.instrument = io.value.trim(); saveSoon(); upd(); });
 }
 /* L'icône de la ligne du solo en cours suit la lecture (▶ / ⏸) */
 function syncSoloPlay() {
@@ -820,6 +838,7 @@ function hideSplash() { const e = document.getElementById('splash'); if (!e) ret
   try {
     db = await openDB();
     S.songs = (await idb('songs', 'readonly', s => s.getAll())) || [];
+    for (const sg of S.songs) { let ch = false; for (const so of sg.solos || []) { const c = canonInstr(so.instrument); if (c !== (so.instrument || '')) { so.instrument = c; ch = true; } } if (ch) saveSongNow(sg); }   // « Flute » → « Flûte », etc.
     render(); hideSplash();
   } catch (e) {
     hideSplash();

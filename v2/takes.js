@@ -9,6 +9,7 @@ const TK_LS = { mic: 'sl-mic', off: 'sl-tk-offset' };
 const tkGet = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch { return d; } };
 const tkSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
 const TKI = {
+  mic: '<svg class="ic" viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M9 21h6"/></svg>',
   rec: '<svg class="ic" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="6.5" fill="currentColor"/></svg>',
   stop: '<svg class="ic" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>',
 };
@@ -77,6 +78,8 @@ function tkRecUI(label) {
   const b = document.getElementById('tkRec'); if (!b) return;
   const st = TK.rec ? TK.rec.state : '';
   b.classList.toggle('on', !!st);
+  const sb = document.getElementById('sbRec');
+  if (sb) { sb.classList.toggle('on', !!st); sb.innerHTML = st === 'rec' ? `${TKI.stop}<span>Arrêter</span>` : st === 'count' ? `<span>${label || '…'}</span>` : `${TKI.mic}<span>Enregistrer</span>`; }
   b.innerHTML = st === 'rec' ? `${TKI.stop}<span>Arrêter</span>` : st === 'count' ? `<span>${label || '…'}</span>` : `${TKI.rec}<span>Enregistrer</span>`;
 }
 function tkButtons() {   // met à jour seulement les boutons de lecture (la liste, ses réglages ouverts et ses curseurs restent en place)
