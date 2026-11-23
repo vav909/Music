@@ -35,7 +35,7 @@ function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(() => S.so
 const S = {
   songs: [], tab: 'songs', song: null, soloId: null,
   loop: true, tempo: 100, zoom: 2, step: 1, gap: 0, ramp: false, passes: 0, waiting: false,
-  onlyFav: false, instr: '', status: null, openId: null, sort: (() => { try { return localStorage.getItem('sl-sort') === 'new' ? 'new' : 'alpha'; } catch { return 'alpha'; } })(),   // openId : solo dont les options sont dépliées
+  onlyFav: false, instr: '', status: null, exp: new Set(), openId: null, sort: (() => { try { return localStorage.getItem('sl-sort') === 'new' ? 'new' : 'alpha'; } catch { return 'alpha'; } })(),   // openId : solo dont les options sont dépliées
 };
 S.full = (() => { try { return localStorage.getItem('sl-full') === '1'; } catch { return false; } })();   // lecteur complet ou allégé
 /* Icônes dessinées en trait fin (épaisseur commune). Les symboles ▶ ⏸ ⏹ ⬆ ⬇ en texte deviennent des emojis colorés sur Android. */
@@ -206,16 +206,17 @@ function renderLibrary() {
             <button class="icon-sm" data-act="lib-details" data-song="${sg.id}" data-solo="${s.id}" aria-label="Détails du solo">${PENCIL}</button>
           </div></div></div>`;
   // un morceau = sa carte (pochette, titre, détails) au-dessus de ses solos ; balayer la carte emporte tout le bloc (corbeille sur fond violet sur toute la hauteur)
-  const songCard = sg => `
+  const songCard = (sg, open) => `
       <div class="grp-head"><button class="grp-open" data-act="open-song" data-song="${sg.id}">
         ${sg.cover ? `<img class="grp-cover" src="${esc(sg.cover)}" alt="" loading="lazy" onerror="this.outerHTML='<span class=&quot;grp-cover ph&quot;>♪</span>'">` : '<span class="grp-cover ph">♪</span>'}
-        <span class="grp-t"><b>${esc(sg.title || 'Sans titre')}</b><small>${[sg.artist, sg.album].filter(Boolean).map(esc).join(' · ')}${sg.artist || sg.album ? ' · ' : ''}${fmt(sg.duration)} · ${sg.solos.length} solo${sg.solos.length > 1 ? 's' : ''}</small></span></button></div>`;
+        <span class="grp-t"><b>${esc(sg.title || 'Sans titre')}</b><small>${[sg.artist, sg.album].filter(Boolean).map(esc).join(' · ')}${sg.artist || sg.album ? ' · ' : ''}${fmt(sg.duration)} · ${sg.solos.length} solo${sg.solos.length > 1 ? 's' : ''}</small></span></button>
+        <button class="grp-chev" data-act="grp-toggle" data-song="${sg.id}" aria-expanded="${open}" aria-label="${open ? 'Replier' : 'Déplier'} les solos">${open ? IC.chevUp : IC.chev}</button></div>`;
   c.innerHTML = `<div class="list lib">
       <div class="filter-panel"${S.showFilters ? '' : ' hidden'}>
       ${instrs.length ? `<div class="filters row-instr">` + instrs.map(i => `<button class="chip ${S.instr === i ? 'on' : ''}" data-act="instr-filter" data-instr="${esc(i)}">${esc(i)}</button>`).join('') + `</div>` : ''}
       <div class="filters"><button class="chip ${S.onlyFav ? 'on' : ''}" data-act="fav-filter">${IC.star(S.onlyFav)} Favoris</button><button class="chip ${S.sort === 'alpha' ? 'on' : ''}" data-act="sort" data-sort="alpha">A – Z</button><button class="chip ${S.sort === 'new' ? 'on' : ''}" data-act="sort" data-sort="new">Arrivée</button></div>
       <div class="filters row-status">` + Object.entries(STATUS).map(([k, v]) => `<button class="chip ${S.status === k ? 'on' : ''}" data-act="status-filter" data-status="${k}"><i class="st-dot st-${k || 'none'}"></i>${v}</button>`).join('') + `</div></div>` +
-      (groups.length ? groups.map(({ sg, list }) => `<div class="grp-wrap"><button class="grp-del" data-act="del-song" data-song="${sg.id}" aria-label="Supprimer ce morceau et ses solos">${IC.trash}</button><div class="grp-inner">${songCard(sg)}${list.map(s => soloCard(sg, s)).join('')}</div></div>`).join('')
+      (groups.length ? groups.map(({ sg, list }) => { const open = filtering || S.exp.has(sg.id); return `<div class="grp-wrap"><button class="grp-del" data-act="del-song" data-song="${sg.id}" aria-label="Supprimer ce morceau et ses solos">${IC.trash}</button><div class="grp-inner">${songCard(sg, open)}${open ? `<div class="grp-solos">${list.map(s => soloCard(sg, s)).join('')}</div>` : ''}</div></div>`; }).join('')
         : `<div class="empty"><p>Aucun solo ici.</p></div>`) + `</div><button class="fab fab-r" data-act="add-song" aria-label="Importer un morceau" title="Importer un morceau">${IC.plus}</button>`;
 }
 
@@ -681,6 +682,7 @@ document.addEventListener('click', async e => {
     case 'tab': libStop(); S.tab = d.tab; render(); break;
     case 'solo-status': { const so = S.song.solos.find(x => x.id === d.solo); if (so) { so.status = STATUS_NEXT[so.status || '']; saveSoon(); renderPanel(); toast('Statut : ' + STATUS[so.status].toLowerCase()); } break; }
     case 'lib-status': { const sg = S.songs.find(x => x.id === d.song), so = sg && sg.solos.find(x => x.id === d.solo); if (so) { so.status = STATUS_NEXT[so.status || '']; saveSongNow(sg); render(); toast('Statut : ' + STATUS[so.status].toLowerCase()); } break; }
+    case 'grp-toggle': S.exp.has(d.song) ? S.exp.delete(d.song) : S.exp.add(d.song); render(); break;
     case 'filter-toggle': S.showFilters = !S.showFilters; render(); break;
     case 'status-filter': S.status = S.status === d.status ? null : d.status; render(); break;
     case 'lib-play': libPlay(d.song, d.solo); break;

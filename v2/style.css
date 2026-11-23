@@ -414,3 +414,13 @@ details[open].tk-off > summary::after, details[open].tk-set > summary::after { t
 .splash-art { width: min(78vw, 360px); height: auto; animation: splash-in .6s ease-out both; }
 @keyframes splash-in { from { opacity: 0; transform: scale(.92) rotate(-6deg); } to { opacity: 1; transform: none; } }
 #title:not(.is-song) { padding-left: 16px; font-size: 21px; font-weight: 700; }
+
+/* Home : une carte (blanc 60 %) par morceau ; les solos se déplient à droite */
+.grp-wrap { margin: 0 0 12px; }
+.grp-inner { background: linear-gradient(rgba(255, 255, 255, .6), rgba(255, 255, 255, .6)), var(--panel); padding: 6px 8px 8px; border-radius: 16px; }
+.grp-head { display: flex; align-items: center; background: transparent; margin: 0; }
+.grp-open { flex: 1; min-width: 0; width: auto; padding: 0 4px; }
+.grp-chev { width: 44px; min-width: 44px; height: 56px; min-height: 56px; padding: 0; background: transparent; color: var(--accent); display: grid; place-items: center; flex: none; }
+.grp-solos { display: grid; gap: 0; padding-top: 8px; }
+.grp-solos > .swrap:last-child { margin-bottom: 0; }
+.grp-head:not(:last-child) { margin-bottom: 0; }
