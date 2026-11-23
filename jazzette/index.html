@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FAFAF7">
+<title>Jazzette · Les tonalités</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <section id="home" class="screen"></section>
+
+  <section id="game" class="screen">
+    <div class="bar">
+      <button class="ico" id="quit" aria-label="Quitter"></button>
+      <div id="dots" class="dots"></div>
+      <button class="ico" id="gdbg" aria-label="Menu debug"></button>
+    </div>
+    <div id="strip" class="strip"></div>
+    <main id="stage"></main>
+    <div id="msg" class="msg"></div>
+    <svg id="links" class="links"></svg>
+  </section>
+
+  <section id="end" class="screen"></section>
+  <div id="sheet" class="sheet" hidden></div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
