@@ -483,3 +483,6 @@ i.st-dot.st-none, .chip i.st-none { border: 1.5px solid var(--accent); }
 .sheet-bar button[aria-pressed=true] { opacity: 1; }
 .sheet-bar button.rec { box-shadow: 0 0 0 3px var(--tint); }
 .sheet-bar button svg { width: 28px; height: 28px; }
+
+/* Détails du solo : position « off » = ni partition ni prises (bandeau déployé) */
+#sheet:not([data-tab=score]) details[data-sec=score], #sheet:not([data-tab=takes]) details[data-sec=takes] { display: none; }

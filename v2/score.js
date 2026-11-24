@@ -2,7 +2,7 @@
 /* Partition du solo sélectionné : analyse de la hauteur (YIN), quantification, affichage SVG,
    correction note par note, export MIDI / MusicXML. Aucune dépendance, fonctionne hors ligne. */
 
-const SH = { sel: null, busy: false, bars: 2, tab: 'score', open: { score: true, takes: true, settings: false, diag: false } };
+const SH = { sel: null, busy: false, bars: 2, tab: '', open: { score: true, takes: true, settings: false, diag: false } };
 const ALLOWED = [16, 12, 8, 6, 4, 3, 2, 1];             // durées autorisées, en doubles-croches
 const SP = 9, LINE_H = 140, CLEF_W = 36, TS_W = 16;      // interligne, hauteur d'une ligne, largeurs fixes
 const INK = '#1b1918', BLUE = '#636487', MUTED = '#98836a';
@@ -418,7 +418,7 @@ function sheetHTML(solo) {
         <div class="t"><b id="sheetTitle">${title}</b><small id="sheetSub">${fmt(solo.start)} – ${fmt(solo.end)} · ${solo.tempo || S.tempo}%</small></div>
         <div class="sheet-act"><button class="stat" id="sheetStat" data-act="sheet-status" aria-label="Statut du solo (toucher pour changer)"><i class="st-${solo.status || 'none'}"></i></button><button class="star${solo.fav ? ' on' : ''}" id="sheetStar" data-act="sheet-star" aria-label="Favori">${IC.star(solo.fav)}</button><button class="icon-sm" data-act="sheet-profile" aria-label="Modifier nom, instrument et soliste">${PENCIL}</button></div></div>
       <div class="sheet-profile" id="sheetProfile" hidden>${profileFields(solo, 'pf')}</div>
-      ${playerHTML()}
+      ${playerHTML(true)}
     </div>
     <div class="sheet-body">
       ${sec('score', 'Transcription', `<div class="tr-row"><button class="tr-btn" data-act="score-play" id="spBtn">${scoreBtn(PL.on && !PL.mix, 'score', 'Jouer la partition')}</button><button class="tr-btn" data-act="score-play" data-mix="1" id="spMix">${scoreBtn(PL.on && PL.mix, 'mix', 'Avec le solo')}</button></div>
@@ -445,6 +445,7 @@ function sheetHTML(solo) {
 /* Affiche la page entière (sections, timeline, partition) */
 function applySheetTab() {
   const sh = $('#sheet'); if (!sh) return; sh.dataset.tab = SH.tab;
+  if (S.full !== (SH.tab === '')) setFull(SH.tab === '', false);   // onglet actif : bandeau réduit ; position « off » : bandeau déployé (début et fin)
   const a = $('#sbScore'), b = $('#sbRec'); if (a) a.setAttribute('aria-pressed', String(SH.tab === 'score')); if (b) b.setAttribute('aria-pressed', String(SH.tab === 'takes'));
 }
 function redrawSheet() {
@@ -558,11 +559,11 @@ async function runAnalysis() {
 }
 function openSheet() {
   const solo = curSolo(); if (!solo) return;
-  stopScore(); SH.sel = null; SH.tab = 'score'; S.newId = null; const sh = $('#sheet'); sh.hidden = false; document.body.style.overflow = 'hidden';
+  stopScore(); SH.sel = null; SH.tab = ''; S.newId = null; const sh = $('#sheet'); sh.hidden = false; document.body.style.overflow = 'hidden';
   redrawSheet(); sh.scrollTop = 0;
   if (solo.score && solo.score.diag) drawSheet(); else if (solo.score && solo.score.edited) drawSheet(); else runAnalysis();
 }
-function closeSheet() { Takes.stopAll(); stopScore(); $('#sheet').hidden = true; document.body.style.overflow = ''; audio.pause(); }
+function closeSheet() { Takes.stopAll(); stopScore(); $('#sheet').hidden = true; document.body.style.overflow = ''; audio.pause(); setFull(savedFull(), false); }
 
 function edit(fn) {
   const sc = sc$(); if (!sc || SH.sel === null) return;
@@ -642,9 +643,9 @@ document.addEventListener('click', e => {
   switch (d.act) {
     case 'sheet-open': openSheet(); break;
     case 'sheet-close': closeSheet(); break;
-    case 'sb-score': case 'sb-rec': {   // affiche uniquement la partition, ou uniquement les prises (rien ne démarre)
-      SH.tab = d.act === 'sb-score' ? 'score' : 'takes'; applySheetTab();
-      const sec = document.querySelector(`details[data-sec=${SH.tab}]`); if (sec) sec.open = true;
+    case 'sb-score': case 'sb-rec': {   // bascule : partition / prises affichées (bandeau réduit) ou « off » (bandeau déployé : début et fin)
+      const t = d.act === 'sb-score' ? 'score' : 'takes'; SH.tab = SH.tab === t ? '' : t; applySheetTab();
+      const sec = SH.tab && document.querySelector(`details[data-sec=${SH.tab}]`); if (sec) sec.open = true;
       $('#sheet').scrollTop = 0; if (SH.tab === 'score') drawSheet();
       break;
     }
