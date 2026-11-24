@@ -79,7 +79,7 @@ function tkRecUI(label) {
   const st = TK.rec ? TK.rec.state : '';
   b.classList.toggle('on', !!st);
   const sb = document.getElementById('sbRec');
-  if (sb) { sb.classList.toggle('on', !!st); sb.innerHTML = st === 'rec' ? `${TKI.stop}<span>Arrêter</span>` : st === 'count' ? `<span>${label || '…'}</span>` : `${TKI.mic}<span>Enregistrer</span>`; }
+  if (sb) sb.classList.toggle('rec', !!st);
   b.innerHTML = st === 'rec' ? `${TKI.stop}<span>Arrêter</span>` : st === 'count' ? `<span>${label || '…'}</span>` : `${TKI.rec}<span>Enregistrer</span>`;
 }
 function tkButtons() {   // met à jour seulement les boutons de lecture (la liste, ses réglages ouverts et ses curseurs restent en place)

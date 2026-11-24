@@ -37,7 +37,7 @@ const S = {
   loop: true, tempo: 100, zoom: 2, step: 1, gap: 0, ramp: false, passes: 0, waiting: false,
   onlyFav: false, instr: '', status: null, exp: new Set(), openId: null, sort: (() => { try { return localStorage.getItem('sl-sort') === 'new' ? 'new' : 'alpha'; } catch { return 'alpha'; } })(),   // openId : solo dont les options sont dépliées
 };
-S.full = (() => { try { return localStorage.getItem('sl-full') === '1'; } catch { return false; } })();   // lecteur complet ou allégé
+S.full = (() => { try { return localStorage.getItem('sl-full') !== '0'; } catch { return true; } })();   // lecteur complet ou allégé
 /* Icônes dessinées en trait fin (épaisseur commune). Les symboles ▶ ⏸ ⏹ ⬆ ⬇ en texte deviennent des emojis colorés sur Android. */
 const svgI = (p, s = 24) => `<svg class="ic" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 const IC = {
@@ -224,7 +224,7 @@ function renderLibrary() {
 function renderSong() {
   const c = $('#content');
   c.innerHTML = playerHTML() + `<section class="list" id="soloPanel"></section>
-    <button class="fab" data-act="solo-new" aria-label="Nouveau solo à partir d’ici">${IC.plus}</button>`;
+    <button class="fab fab-r" data-act="solo-new" aria-label="Nouveau solo à partir d’ici">${IC.plus}</button>`;
   mountPlayer($('.player'));
   drawTimeline(); renderPanel(); updateTransport(); updatePlayhead(true);
 }
@@ -248,6 +248,7 @@ function playerHTML() {
       <button class="pl-sq" data-act="tempo" data-d="5" aria-label="Tempo plus 5 pour cent">${IC.plus}</button>
       <button class="pl-sq pl-gap" data-act="gap" aria-label="Pause entre passages"><i></i><span>0s</span><i></i></button>
     </div>
+    <div class="pl-edges">${edgeRow('start')}${edgeRow('end')}</div>
     <div class="pl-more"><button data-act="step" data-step>Pas : 1 s</button><button class="pl-ramp" data-act="ramp">Montée progressive : non</button></div>
   </section>`;
 }
@@ -316,6 +317,17 @@ const edgeRow = w => { const n = w === 'start' ? 'Début' : 'Fin'; return `<div 
     <button class="pl-sq" data-act="nudge" data-w="${w}" data-d="-1" aria-label="${n} moins">${IC.minus}</button>
     <button class="pl-sq" data-act="nudge" data-w="${w}" data-d="1" aria-label="${n} plus">${IC.plus}</button>
     <button class="pl-sq here" data-act="here" data-w="${w}" aria-label="${n} : prendre la position de lecture">${IC.target}</button></div>`; };
+function bindProfile(act, pfx, after) {
+  const sl = $('#' + pfx + 'Soloist'), n = $('#' + pfx + 'Name'), i = $('#' + pfx + 'Instr'), io = $('#' + pfx + 'InstrOther');
+  if (sl) sl.addEventListener('input', () => { act.soloist = sl.value; saveSoon(); after && after(); });
+  if (n) n.addEventListener('input', () => { act.name = n.value; saveSoon(); after && after(); });
+  if (i) i.addEventListener('change', () => {
+    if (i.value === '__other') { io.hidden = false; io.focus(); act.instrument = canonInstr(io.value); }
+    else { io.hidden = true; act.instrument = i.value; }
+    saveSoon(); after && after();
+  });
+  if (io) io.addEventListener('input', () => { act.instrument = io.value.trim(); saveSoon(); after && after(); });
+}
 /* Instruments : liste stricte (jazz) + « Autre… » pour une saisie libre */
 const INSTRUMENTS = ['Flûte', 'Piccolo', 'Saxophone soprano', 'Saxophone alto', 'Saxophone ténor', 'Saxophone baryton', 'Trompette', 'Bugle', 'Trombone', 'Clarinette', 'Piano', 'Orgue', 'Guitare', 'Vibraphone', 'Violon', 'Voix', 'Contrebasse'];
 const INSTR_ALIAS = { flute: 'Flûte', saxophone: 'Saxophone alto', sax: 'Saxophone alto', saxalto: 'Saxophone alto', saxtenor: 'Saxophone ténor', saxsoprano: 'Saxophone soprano', saxbaryton: 'Saxophone baryton', trumpet: 'Trompette', clarinet: 'Clarinette', voice: 'Voix', bass: 'Contrebasse', basse: 'Contrebasse' };
@@ -323,19 +335,21 @@ function canonInstr(v) {
   const n = norm(v); if (!n) return '';
   return INSTRUMENTS.find(i => norm(i) === n) || INSTR_ALIAS[n] || String(v).trim();
 }
-function instrSelectHTML(cur) {
+function instrSelectHTML(cur, pfx = 'solo') {
   const c = canonInstr(cur), known = INSTRUMENTS.includes(c), other = !!c && !known;
-  return `<select class="txt sel" id="soloInstr" aria-label="Instrument"><option value="">Instrument…</option>${INSTRUMENTS.map(i => `<option${i === c ? ' selected' : ''}>${i}</option>`).join('')}<option value="__other"${other ? ' selected' : ''}>Autre…</option></select>
-      <input class="txt" id="soloInstrOther" value="${other ? esc(c) : ''}" placeholder="Autre instrument" aria-label="Autre instrument"${other ? '' : ' hidden'}>`;
+  return `<select class="txt sel" id="${pfx}Instr" aria-label="Instrument"><option value="">Instrument…</option>${INSTRUMENTS.map(i => `<option${i === c ? ' selected' : ''}>${i}</option>`).join('')}<option value="__other"${other ? ' selected' : ''}>Autre…</option></select>
+      <input class="txt" id="${pfx}InstrOther" value="${other ? esc(c) : ''}" placeholder="Autre instrument" aria-label="Autre instrument"${other ? '' : ' hidden'}>`;
+}
+function profileFields(act, pfx) {
+  return `<input class="txt" id="${pfx}Name" value="${esc(act.name)}" placeholder="Nom du solo" aria-label="Nom du solo">
+      ${instrSelectHTML(act.instrument, pfx)}
+      <input class="txt" id="${pfx}Soloist" value="${esc(act.soloist)}" placeholder="Soliste (ex. Miles Davis)" aria-label="Soliste">`;
 }
 function soloEditor(act) {
   return `<div class="editor">
-      <input class="txt" id="soloName" value="${esc(act.name)}" placeholder="Nom du solo" aria-label="Nom du solo">
-      ${instrSelectHTML(act.instrument)}
-      <input class="txt" id="soloSoloist" value="${esc(act.soloist)}" placeholder="Soliste (ex. Miles Davis)" aria-label="Soliste">
-      <div class="ed-edges">${edgeRow('start')}${edgeRow('end')}</div>
-      <div class="ed-act"><button class="cta2" data-act="sheet-open">Détails du solo</button>
-      <button class="del" data-act="solo-del" aria-label="Supprimer ce solo">${IC.trash}</button></div>
+      ${S.newId === act.id ? profileFields(act, 'solo') : ''}
+      <div class="ed-time"><span>Début <b data-edge="start">${fmt(act.start, true)}</b></span><span>Fin <b data-edge="end">${fmt(act.end, true)}</b></span></div>
+      <button class="cta2" data-act="sheet-open">Détails du solo</button>
     </div>`;
 }
 function renderPanel() {
@@ -360,16 +374,7 @@ function renderPanel() {
   p.innerHTML = h; syncSoloPlay(); syncEdges();
   const act = S.openId && song.solos.find(x => x.id === S.openId);
   if (!act) return;
-  const sl = $('#soloSoloist'), n = $('#soloName'), i = $('#soloInstr');
-  if (sl) sl.addEventListener('input', () => { act.soloist = sl.value; saveSoon(); });
-  if (n) n.addEventListener('input', () => { act.name = n.value; saveSoon(); const b = document.querySelector('.solo.open .pick b'); if (b) b.textContent = act.name + (act.instrument ? ' · ' + act.instrument : ''); });
-  const io = $('#soloInstrOther'), upd = () => { const b = document.querySelector('.solo.open .pick b'); if (b) b.textContent = act.name + (act.instrument ? ' · ' + act.instrument : ''); };
-  if (i) i.addEventListener('change', () => {
-    if (i.value === '__other') { io.hidden = false; io.focus(); act.instrument = canonInstr(io.value); }
-    else { io.hidden = true; act.instrument = i.value; }
-    saveSoon(); upd();
-  });
-  if (io) io.addEventListener('input', () => { act.instrument = io.value.trim(); saveSoon(); upd(); });
+  bindProfile(act, 'solo', () => { const b = document.querySelector('.solo.open .pick b'); if (b) b.textContent = act.name + (act.instrument ? ' · ' + act.instrument : ''); });
 }
 /* L'icône de la ligne du solo en cours suit la lecture (▶ / ⏸) */
 function syncSoloPlay() {
@@ -504,8 +509,9 @@ function newSolo() {
   };
   [...song.solos].sort(bySoloOrder).forEach((x, i) => { x.ord = i + 1; }); solo.ord = 0;   // le nouveau solo arrive en haut de la pile
   song.solos.push(solo); saveSoon();
-  pickSolo(solo.id, false); S.openId = solo.id; renderPanel();   // les options se déplient pour régler la fin
-  toast('Solo créé : place la fin avec « ⌖ ici »');
+  S.newId = solo.id;   // les trois champs du profil ne sont affichés que pour un solo qui vient d'être créé
+  pickSolo(solo.id, false); S.openId = solo.id; renderPanel();
+  toast('Solo créé : règle début et fin dans le bandeau du haut');
 }
 function editEdge(w, newT) {
   const s = curSolo(); if (!s) return;
@@ -743,11 +749,14 @@ document.addEventListener('click', async e => {
       } else pickSolo(d.solo, true);
       break;
     case 'solo-new': newSolo(); break;
-    case 'solo-toggle': if (S.openId === d.solo) { S.openId = null; renderPanel(); } else { pickSolo(d.solo, false); S.openId = d.solo; renderPanel(); } break;
+    case 'solo-toggle': if (S.newId && S.newId !== d.solo) S.newId = null; if (S.openId === d.solo) { S.openId = null; S.newId = null; renderPanel(); } else { pickSolo(d.solo, false); S.openId = d.solo; renderPanel(); } break;
     case 'solo-details': pickSolo(d.solo, false); openSheet(); break;
     case 'solo-del':
       if (s && confirm(`Supprimer « ${s.name} » ?`) && await Takes.confirmDelete(s.id)) { S.song.solos = S.song.solos.filter(x => x !== s); S.soloId = null; S.openId = null; saveSoon(); drawTimeline(); renderPanel(); if (!$('#sheet').hidden) closeSheet(); }
       break;
+    case 'sheet-status': { const so = curSolo(); if (so) { so.status = STATUS_NEXT[so.status || '']; saveSoon(); $('#sheetStat').innerHTML = `<i class="st-${so.status || 'none'}"></i>`; renderPanel(); toast('Statut : ' + STATUS[so.status].toLowerCase()); } break; }
+    case 'sheet-star': { const so = curSolo(); if (so) { so.fav = !so.fav; saveSoon(); $('#sheetStar').innerHTML = IC.star(so.fav); $('#sheetStar').classList.toggle('on', so.fav); renderPanel(); } break; }
+    case 'sheet-profile': { const pf = $('#sheetProfile'); if (pf) pf.hidden = !pf.hidden; break; }
     case 'solo-swipe-del': {
       const so = S.song.solos.find(x => x.id === d.solo); if (!so || !(await Takes.confirmDelete(so.id))) break;
       S.song.solos = S.song.solos.filter(x => x !== so); if (S.soloId === so.id) S.soloId = null; if (S.openId === so.id) S.openId = null;
