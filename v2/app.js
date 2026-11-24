@@ -348,7 +348,7 @@ function profileFields(act, pfx) {
 function soloEditor(act) {
   return `<div class="editor">
       ${S.newId === act.id ? profileFields(act, 'solo') : ''}
-      <div class="ed-time"><span>Début <b data-edge="start">${fmt(act.start, true)}</b></span><span>Fin <b data-edge="end">${fmt(act.end, true)}</b></span></div>
+      <div class="ed-edges">${edgeRow('start')}${edgeRow('end')}</div>
       <button class="cta2" data-act="sheet-open">Détails du solo</button>
     </div>`;
 }
@@ -511,7 +511,7 @@ function newSolo() {
   song.solos.push(solo); saveSoon();
   S.newId = solo.id;   // les trois champs du profil ne sont affichés que pour un solo qui vient d'être créé
   pickSolo(solo.id, false); S.openId = solo.id; renderPanel();
-  toast('Solo créé : règle début et fin dans le bandeau du haut');
+  toast('Solo créé : règle début et fin ici ou dans le bandeau');
 }
 function editEdge(w, newT) {
   const s = curSolo(); if (!s) return;
