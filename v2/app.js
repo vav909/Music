@@ -231,7 +231,15 @@ function renderSong() {
 
 /* Lecteur, sur la page du morceau et dans les détails du solo :
    réduit = bande du son, boucle / reculer / lecture / avancer, tempo ; complet = + temps, zoom, début / fin du solo, pas, montée progressive */
-function playerHTML() {
+/* Bandeau du lecteur déployé / réduit (persist = mémoriser le choix pour la page du morceau) */
+function setFull(v, persist = true) {
+  S.full = v; if (persist) { try { localStorage.setItem('sl-full', v ? '1' : '0'); } catch {} }
+  document.querySelectorAll('.player').forEach(pl => pl.classList.toggle('full', v));
+  document.querySelectorAll('.pl-expand').forEach(x => x.setAttribute('aria-expanded', v));
+  drawTimeline(); updatePlayhead(true);
+}
+const savedFull = () => { try { return localStorage.getItem('sl-full') !== '0'; } catch { return true; } };
+function playerHTML(withEdges = false) {
   return `<section class="player${S.full ? ' full' : ''}">
     <div class="tlbox">${timelineTools()}${timelineHTML()}</div>
     <div class="pl-ctl">
@@ -248,7 +256,7 @@ function playerHTML() {
       <button class="pl-sq" data-act="tempo" data-d="5" aria-label="Tempo plus 5 pour cent">${IC.plus}</button>
       <button class="pl-sq pl-gap" data-act="gap" aria-label="Pause entre passages"><i></i><span>0s</span><i></i></button>
     </div>
-    <div class="pl-edges">${edgeRow('start')}${edgeRow('end')}</div>
+    ${withEdges ? `<div class="pl-edges">${edgeRow('start')}${edgeRow('end')}</div>` : ''}
     <div class="pl-more"><button data-act="step" data-step>Pas : 1 s</button><button class="pl-ramp" data-act="ramp">Montée progressive : non</button></div>
   </section>`;
 }
@@ -733,12 +741,7 @@ document.addEventListener('click', async e => {
     case 'tempo': setTempo(S.tempo + +d.d); break;
     case 'tempo-reset': setTempo(100); break;
     case 'seek-hold': if (e.detail === 0 && S.song) seekBy(+d.d * 0.5); break;   // clavier / lecteur d'écran ; au doigt, voir les événements pointer
-    case 'player-full': {
-      S.full = !S.full; try { localStorage.setItem('sl-full', S.full ? '1' : '0'); } catch {}
-      document.querySelectorAll('.player').forEach(pl => pl.classList.toggle('full', S.full));
-      document.querySelectorAll('.pl-expand').forEach(x => x.setAttribute('aria-expanded', S.full));
-      drawTimeline(); updatePlayhead(true); break;
-    }
+    case 'player-full': setFull(!S.full); break;
     case 'edit-song': openEdit(); break;
     case 'edit-close': closeEdit(); break;
     case 'zoom': S.zoom = Math.max(0, Math.min(ZOOMS.length - 1, S.zoom + +d.d)); drawTimeline(); updatePlayhead(true); break;
