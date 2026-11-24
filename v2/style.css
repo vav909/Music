@@ -461,3 +461,25 @@ select.txt.sel { background: var(--panel2); border: 0; border-radius: 14px; min-
 #noteBar { bottom: 76px; }
 #sheet { padding-bottom: 0; }
 #sheet > .sheet-body { flex: 1 0 auto; }
+
+/* ---------- Plan de travail : bandeau Début / Fin, carte dépliée allégée, en-tête des détails, barre à deux onglets ---------- */
+.st-none { border: 1.5px solid var(--accent); }
+i.st-dot.st-none, .chip i.st-none { border: 1.5px solid var(--accent); }
+.ed-time { display: flex; gap: 24px; color: var(--muted); font-size: 15px; padding: 0 2px; }
+.ed-time b { color: var(--text); font-size: 17px; margin-left: 6px; font-variant-numeric: tabular-nums; }
+.editor .cta2 { height: 52px; min-height: 52px; border-radius: 26px; }
+.sheet-act { display: flex; align-items: center; height: 69px; margin-left: auto; padding-right: 6px; flex: none; }
+.sheet-act .stat, .sheet-act .star, .sheet-act .icon-sm { width: 40px; min-width: 40px; height: 52px; min-height: 52px; padding: 0; background: transparent; display: grid; place-items: center; }
+.sheet-act .star, .sheet-act .star.on { color: var(--accent); }
+.sheet-act svg.ic { width: 24px; height: 24px; }
+.sheet-top2 .t { flex: 1; min-width: 0; }
+.sheet-profile { display: grid; gap: var(--gap); padding: 0 var(--gap) var(--gap); background: var(--bg); }
+.sheet-profile[hidden] { display: none; }
+.sheet-profile input.txt, .sheet-profile select.txt { background: var(--panel2); border: 0; border-radius: 14px; min-height: 52px; }
+/* un seul contenu à la fois : partition OU prises */
+#sheet[data-tab=score] details[data-sec=takes], #sheet[data-tab=takes] details[data-sec=score] { display: none; }
+#sheet[data-tab=takes] details[data-sec=takes] > summary, #sheet[data-tab=score] details[data-sec=score] > summary { pointer-events: none; }
+.sheet-bar button { background: var(--accent); color: var(--accent-ink); opacity: .55; }
+.sheet-bar button[aria-pressed=true] { opacity: 1; }
+.sheet-bar button.rec { box-shadow: 0 0 0 3px var(--tint); }
+.sheet-bar button svg { width: 28px; height: 28px; }
